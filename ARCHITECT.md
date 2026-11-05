@@ -1,6 +1,6 @@
 # ARCHITECT.md - 設計書
 
-> 最終更新: 2026-11-05 / 対象: Phase 1（SNS 滞在時間の計測コア）
+> 最終更新: 2026-11-05 / 対象: Phase 1（SNS 滞在時間の計測コア）+ デスクトップ表示（タイマーのみ。アバターは差し替え枠）
 > このファイルはコード変更に合わせて更新する（AGENTS.md §3）。
 
 ## 1. Overview
@@ -16,19 +16,30 @@ goo-gaa-project/
 ├── REQUIREMENTS.md        # ハッカソン要件（提出物・審査基準・技術制約）
 ├── ARCHITECT.md           # 本書
 ├── PROBLEM.md             # 課題表（Spike / Backlog）
-├── requirements.txt       # pyobjc-framework-Cocoa
+├── requirements.txt       # pyobjc-framework-Cocoa, pywebview
 ├── .gitignore             # .env / .venv/ / __pycache__/
 ├── goo_gaa/
 │   ├── __init__.py
 │   ├── classifier.py      # [純粋] アプリ名 / URL ホスト -> SNS か否か
 │   ├── usage_tracker.py   # [純粋] SNS 秒数・総秒数の累積（monotonic、スリープ除外）
 │   ├── watcher_macos.py   # [OS依存] 前面アプリ名 + ブラウザ URL の取得
-│   └── main.py            # ポーリングループ + Graceful Shutdown
+│   ├── monitor.py         # [スレッド] ポーリングループ。state() が UI との唯一の契約
+│   ├── main.py            # CLI 表示（デバッグ / ヘッドレス用）
+│   ├── app.py             # デスクトップウィジェット起動（pywebview）+ JS 公開 API
+│   └── web/               # [UI] 差し替え可能な見た目レイヤー
+│       ├── index.html     # カード構造: アバター枠 + タイマー表示
+│       ├── style.css      # 色はトークン化（:root の CSS 変数）
+│       ├── app.js         # タイマー表示。Avatar の中身は知らない
+│       └── avatar.js      # ★アバター差し替え点（mount / update の 2 関数）
 └── tests/
-    └── test_core.py       # classifier / usage_tracker の境界値テスト
+    ├── test_core.py       # classifier / usage_tracker の境界値テスト
+    └── test_monitor.py    # Monitor（偽サンプラ・偽クロック）のテスト
 ```
 
-実行: `python -m goo_gaa.main`（`.venv` は `uv venv --python 3.12 .venv` で作成）
+実行:
+- ウィジェット: `python -m goo_gaa.app`（右上 × / ホバーで表示、で終了）
+- CLI: `python -m goo_gaa.main`
+- `.venv` は `uv venv --python 3.12 .venv` で作成
 
 ## 3. Architecture & Data Flow
 
@@ -36,7 +47,7 @@ goo-gaa-project/
 OS なしでテストできるようにする。
 
 ```
-          1s ごと (main.py, Event.wait)
+          1s ごと (monitor.py のスレッド, Event.wait)
                     │
                     ▼
    ┌──────────────────────────────┐
@@ -57,7 +68,18 @@ OS なしでテストできるようにする。
    └──────────────┬───────────────┘
                   │ social_seconds / total_seconds
                   ▼
-        標準出力（集計値のみ。URL・アプリ名は出さない）
+        Monitor.state()  ← Lock で保護。集計値のみ（URL・アプリ名は含めない）
+                  │ JSON: {"social_seconds": float, "total_seconds": float}
+                  ▼
+   ┌──────────────────────────────┐
+   │ app.Api.get_state()          │  JS から 1s ごとに pull
+   └──────────────┬───────────────┘
+                  ▼
+   ┌──────────────────────────────┐
+   │ web/app.js  render(state)    │
+   │   ├─ タイマー HH:MM:SS 表示  │  ← 固定
+   │   └─ Avatar.update(state)    │  ← ★差し替え点 (web/avatar.js)
+   └──────────────────────────────┘
 ```
 
 ### データモデル
@@ -67,7 +89,16 @@ OS なしでテストできるようにする。
 | `Snapshot` (NamedTuple) | `app_name: str \| None`, `url: str \| None` | `url` は対応ブラウザのみ。ウィンドウタイトルは取得しない |
 | `UsageTracker` | `social_seconds: float`, `total_seconds: float` | 直前サンプルの状態に経過時間を加算 |
 
-### 外部通信スキーマ
+### UI 契約（Monitor → 画面）
+
+```json
+{ "social_seconds": 754.0, "total_seconds": 1800.0 }
+```
+
+- 将来 `mood` やセリフなどを **追加** する。既存フィールドの名前変更・削除はしない（アバター差し替えを壊さないため）。
+- アプリ名・URL・タイトルは契約に含めない（プライバシー）。
+
+### 外部通信スキーマ（クラウド連携）
 
 未確定。Phase 2 以降でアバター UI / Gemini 連携を設計する際にここへ JSON 構造を追記する（PROBLEM.md [SPIKE-05]）。
 
@@ -129,6 +160,31 @@ OS なしでテストできるようにする。
 キャッシュ値**を返す。素の Python スクリプトには run loop がないため、起動時の値（ターミナル）のまま固定され、
 ブラウザへ切り替えても検知できなかった。`get_snapshot()` の先頭で run loop を 0.05s 回して解決した。
 （調査の経緯は PROBLEM.md [SPIKE-01]）
+
+### 4.9 UI: pywebview (HTML/CSS) + 小型フローティングウィジェット
+
+| | Pros | Cons |
+| :--- | :--- | :--- |
+| **pywebview + HTML/CSS（採用）** | アバターが SVG / Lottie / CSS アセットになり、差し替えがファイル単位で済む。デザインを HTML で素早く反復できる。macOS 標準の WKWebView を使い、既に導入済みの PyObjC を再利用する | 依存が 1 つ増える。Python ⇔ JS の橋渡しを学ぶ必要がある |
+| PyObjC (AppKit) ネイティブ | 依存追加なし。実行時が最軽量 | アバター差し替え = 描画 / アニメのコード書き換え。自前の run loop も必要 |
+| Tkinter | 標準ライブラリ。最小コード | macOS で透過・枠なしが不安定。見た目が古い。Homebrew の Python は Tk が使えないことがある |
+
+**差し替え設計**: 画面とコアの接点を JSON 1 つ（上記 UI 契約）に絞り、アバターは `web/avatar.js` の
+`mount(el)` / `update(state)` だけに閉じ込めた。Python 側とタイマー表示は変更不要。
+
+**Python → JS ではなく JS → Python の pull**: ページが `pywebview.api.get_state()` を 1s ごとに呼ぶ。
+Python 側で JS 文字列を組み立てず、スレッド間の呼び出しも単純。将来サーバ（Cloud Run 等）の同じ JSON を
+読む構成にも移行しやすい。
+
+**ウィンドウ**: `frameless` + `on_top` + `transparent` + `easy_drag`。実測で layer 25（通常ウィンドウは 0）。
+枠なしのため終了手段として、ホバー時だけ出る × ボタンを用意した。
+
+**セキュリティ**: ページは自前ファイルのみ読み込み、JS から呼べる Python は `get_state()` / `quit()` に限定。
+pywebview はページ配信用に `127.0.0.1` のランダムポートで待ち受ける（ローカル限定）。CSP は未設定（[SPIKE-12]）。
+`_setDrawsTransparentBackground` の deprecation 警告は透過実装由来で、脆弱性ではない。
+
+**スレッド構成**: macOS では GUI がメインスレッドを占有するため、ポーリングは `Monitor` のバックグラウンド
+スレッドへ移した（[SPIKE-08] 解決）。GUI モードでも前面アプリの切替が検知されることを実測で確認。
 
 ## 5. 技術スタックと要件との関係
 

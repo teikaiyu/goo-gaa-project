@@ -1,0 +1,90 @@
+/* All colors are tokens so the avatar/theme can be restyled in one place. */
+:root {
+  --card-bg: rgba(24, 24, 32, 0.88);
+  --card-border: rgba(255, 255, 255, 0.10);
+  --text: #f4f4f8;
+  --text-dim: rgba(244, 244, 248, 0.60);
+  --placeholder: rgba(255, 255, 255, 0.14);
+  --avatar-size: 96px;
+}
+
+* { box-sizing: border-box; margin: 0; }
+
+/* Transparent page: the window itself is transparent, only .card is visible. */
+html, body {
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+
+.card {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 20px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 22px;
+  color: var(--text);
+}
+
+.avatar-slot {
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+  display: grid;
+  place-items: center;
+}
+.avatar-slot > * { max-width: 100%; max-height: 100%; }
+
+.avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--placeholder);
+}
+
+.readout { text-align: center; }
+.time {
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;  /* digits keep equal width so the text doesn't jitter */
+}
+.label {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Quit button: only visible on hover so the widget stays calm. */
+.close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 22px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.card:hover .close { opacity: 1; }
+.close:hover { background: rgba(255, 255, 255, 0.12); color: var(--text); }
+.close:focus-visible { opacity: 1; outline: 2px solid var(--text-dim); }
+
+@media (prefers-reduced-motion: reduce) {
+  .close { transition: none; }
+}

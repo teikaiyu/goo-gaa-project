@@ -1,13 +1,9 @@
-"""Polling loop: sample the foreground window every POLL_SEC and feed the tracker."""
+"""CLI front-end: print the Monitor's state once per second (debug / headless use)."""
 import signal
 import threading
-import time
 
-from goo_gaa.classifier import is_social
-from goo_gaa.usage_tracker import UsageTracker
+from goo_gaa.monitor import Monitor
 from goo_gaa.watcher_macos import get_snapshot, warm_up
-
-POLL_SEC = 1.0  # 1s: fine enough for "minutes of doom-scrolling", cheap enough to stay Calm
 
 
 def main() -> None:
@@ -16,14 +12,12 @@ def main() -> None:
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
 
-    warm_up()
-    tracker = UsageTracker(max_gap=POLL_SEC * 5)
-    # Event.wait() sleeps without busy-looping AND wakes immediately on stop.
-    while not stop.wait(POLL_SEC):
-        snap = get_snapshot()
-        tracker.update(is_social(snap.app_name, snap.url), time.monotonic())
-        # Log only the aggregate - never the URL/app name (privacy).
-        print(f"\rsocial: {tracker.social_seconds:6.0f}s / total: {tracker.total_seconds:6.0f}s", end="")
+    monitor = Monitor(sample=get_snapshot, warm_up=warm_up)
+    monitor.start()
+    while not stop.wait(1.0):
+        s = monitor.state()
+        print(f"\rsocial: {s['social_seconds']:6.0f}s / total: {s['total_seconds']:6.0f}s", end="")
+    monitor.stop()
     print("\nbye")
 
 
