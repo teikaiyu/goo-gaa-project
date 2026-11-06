@@ -37,15 +37,18 @@ goo-gaa-project/
 │   ├── watcher_macos.py   # [OS依存] 前面アプリ名 + ブラウザ URL の取得
 │   ├── monitor.py         # [スレッド] ポーリングループ。state() が UI との唯一の契約
 │   ├── main.py            # CLI 表示（デバッグ / ヘッドレス用）
-│   ├── app.py             # デスクトップウィジェット起動（pywebview）+ JS 公開 API
+│   ├── avatar_client.py   # [スレッド] Cloud Run を呼ぶ AvatarFeed + 設定（URL / トークンは環境変数）
+│   ├── app.py             # デスクトップウィジェット起動（pywebview）+ JS 公開 API（get_state / get_avatar_image）
 │   └── web/               # [UI] 差し替え可能な見た目レイヤー
 │       ├── index.html     # カード構造: アバター枠 + タイマー表示
 │       ├── style.css      # 色はトークン化（:root の CSS 変数）
 │       ├── app.js         # タイマー表示。Avatar の中身は知らない
-│       └── avatar.js      # ★アバター差し替え点（mount / update の 2 関数）
+│       └── avatar.js      # ★アバター差し替え点（mount / update の 2 関数）。既定は画像 + 台詞の表示
+├── .env.example           # AVATAR_API_URL / AVATAR_API_TOKEN の雛形（.env は ignore 対象。コミット禁止）
 └── tests/
     ├── test_core.py       # classifier / usage_tracker の境界値テスト
-    └── test_monitor.py    # Monitor（偽サンプラ・偽クロック）のテスト
+    ├── test_monitor.py    # Monitor（偽サンプラ・偽クロック）のテスト
+    └── test_avatar_client.py  # AvatarFeed（偽 fetch）と実際に送信される内容（ローカル HTTP サーバ）のテスト
 ```
 
 実行:
@@ -104,10 +107,14 @@ OS なしでテストできるようにする。
 ### UI 契約（Monitor → 画面）
 
 ```json
-{ "social_seconds": 754.0, "total_seconds": 1800.0 }
+{ "social_seconds": 754.0, "total_seconds": 1800.0,
+  "avatar": { "mood": "grumpy", "message": "…", "action": "…", "source": "gemini|fallback" } }
 ```
 
-- 将来 `mood` やセリフなどを **追加** する。既存フィールドの名前変更・削除はしない（アバター差し替えを壊さないため）。
+- `avatar` は **追加フィールド**。クラウドが一度も応答していない間、または未設定の間は `null`（画面はプレースホルダのまま）。
+- **画像は state に載せない**（毎秒ブリッジを往復するため）。ページが機嫌の変化時に一度だけ
+  `pywebview.api.get_avatar_image(mood)` で取得する（`data:` URL、無ければ `null`）。
+- 既存フィールドの名前変更・削除はしない（アバター差し替えを壊さないため）。
 - アプリ名・URL・タイトルは契約に含めない（プライバシー）。
 
 ### 外部通信スキーマ（デスクトップ → Cloud Run）
@@ -256,6 +263,34 @@ Google クライアントは「初回使用時」に生成する（起動時に�
 デプロイ後に消えるのを防ぐため、`images.py` は小文字化して比較する（テストあり）。
 
 画像生成は `ENABLE_IMAGE_GENERATION=1` かつ該当ファイルが無い場合のみ（既定は無効）。
+
+### 4.12 デスクトップ → Cloud Run の接続（AvatarFeed）
+
+| | Pros | Cons |
+| :--- | :--- | :--- |
+| **専用スレッドが 60 秒ごとに呼ぶ（採用）** | UI を止めない。呼び出し頻度とコストが一定。失敗しても最後の応答を残して再試行できる | 機嫌が変わってから画面に出るまで最大 1 周期 + 応答時間（実測 約 22 秒）かかる |
+| UI（JS）が毎秒 Python 経由で呼ぶ | 反応が速い | 毎秒ネットワーク呼び出し。Gemini 呼び出しが無駄に増え、クォータ（429）を踏みやすい |
+| 機嫌をクライアントで先に計算し、変化時だけ呼ぶ | 呼び出しが最小 | 機嫌の閾値がサーバ（`mood.py`）とクライアントに二重化する |
+
+**画像は機嫌ごとに一度だけ取得**: 通常は `include_image=false`（約 1 KB）で呼び、見たことのない機嫌が返ったときだけ
+`include_image=true` で再取得してキャッシュする（最大 4 回。サーバに画像が無い機嫌は `None` として記憶し、聞き直さない）。
+1 応答 約 350 KB の画像を毎分運ばないため（[SPIKE-17] への対応）。
+
+**設定は環境変数 / `.env`**（コードにもリポジトリにも入れない）: `AVATAR_API_URL`, `AVATAR_API_TOKEN`,
+任意で `AVATAR_REFRESH_SEC`（下限 5 秒）。未設定ならアバターなしでタイマーだけ動く。URL は `https://` 必須
+（`localhost` の検証用を除く）。トークンは `repr` に出ない。
+
+**送るのは集計値だけ**: `social_seconds` / `total_seconds` / `local_hour` / `include_image`。テストで
+「この 4 項目以外は送らない」ことを固定している。24 時間を超える値はサーバが 422 で拒否するため 86,400 に丸める。
+
+**タイムアウトは 25 秒**: サーバは Gemini を最大 20 秒待ってからフォールバックする。実測で応答が 10 秒を超えることがあり
+（通常 5〜6 秒、最大 11.5 秒）、当初の 10 秒では取りこぼした。
+
+**失敗時**: 最後に成功した応答を画面に残し、障害ごとに 1 行だけ警告（エラーの型と HTTP コードのみ。401 = トークン違い、
+429 = クォータ、5xx = サーバ側の見分けがつく）。
+
+**停止**: `stop()` は短い `join`（0.2 秒）で諦める。ネットワーク呼び出し中のスレッドは割り込めず、daemon で
+保存すべき状態もないため（`Monitor.stop()` と同じ判断）。
 
 ## 5. 技術スタックと要件との関係
 
