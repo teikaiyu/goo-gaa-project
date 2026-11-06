@@ -1,0 +1,6 @@
+# Allowlist: ignore everything, then let back in only what the Cloud Run image needs.
+# (Keeps .env, .git, .venv, the desktop app and tests out of the container.)
+*
+!avatar_api/requirements.txt
+!avatar_api/*.py
+!images/

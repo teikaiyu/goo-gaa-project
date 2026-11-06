@@ -56,12 +56,23 @@ SNS のドゥームスクロールで時間を受動的に消費してしまう�
 - 残: [SPIKE-14]（モデル ID・リージョン）、[SPIKE-15]（動画）、TASK-14（デプロイ）。
 - API キーはコードに書かない（Cloud Run では不要。`API_TOKEN` は環境変数 / Secret Manager）。
 
-### [SPIKE-14] 🔴 Vertex AI のモデル ID とリージョンが未検証
-- 既定値 `gemini-2.5-flash`（台詞）/ `gemini-3.1-flash-image`（画像生成）/ `us-central1` は、
-  公式ドキュメントのページ間で記載が食い違っていたため **未確認**。環境変数
-  （`TEXT_MODEL` / `IMAGE_MODEL` / `VERTEX_LOCATION`）で変更できる。
-- 確認方法: Vertex AI のモデル一覧で、使うリージョンに提供されているか確認 → 実際に 1 回呼ぶ。
-- 画像モデル ID が誤っていても、画像なし（またはファイル画像）で動き続ける設計。
+### [SPIKE-14] ✅ Vertex AI のモデル ID とリージョン（実機で確認・修正済み）
+- **症状**: Cloud Run にデプロイ後、全リクエストが `source: "fallback"`。ログは `ClientError`。
+- **調査（2026-11-06, 実プロジェクト）**: `generateContent` を直接呼ぶと `gemini-2.5-flash` は
+  `404 NOT_FOUND`（"not found or your project does not have access"）。モデルカタログには載っているのに生成は 404。
+  `2.5-flash-lite` も同様 → **廃止済み**（資料にあった 2026-10-16 の終了日と整合）。
+- 2.5 以外: `gemini-3-flash-preview` / `3.1-flash-lite` / `3.5` / `3.6` / `3.7` / `3.8` は **`global`** で成功。
+  `us-central1` では全滅、`asia-northeast1`（東京）では `gemini-3.5-flash` のみ成功。画像モデル
+  `gemini-3.1-flash-image` は `global` / `us-central1` で存在、東京は 404。
+- **対応**: 既定値を `TEXT_MODEL=gemini-3.5-flash`、`VERTEX_LOCATION=global` に変更。プロジェクト本物の
+  `AvatarGenerator`（プロンプト + 構造化出力）で 3 ケース成功（goal・時刻を反映した日本語の台詞）。
+  ログに HTTP ステータスを追加（404=モデル消滅 / 403=権限 / 429=クォータの切り分けが 1 手で済む）。
+- **残**: 再デプロイ後に Cloud Run 上で `source: "gemini"` を確認（SPIKE-18）。
+
+### [SPIKE-18] 🔴 モデルの廃止サイクルへの備え
+- 今回は 2.5 の廃止が本番のフォールバックで隠れていた。デモ前日・当日にモデルが消える可能性がある。
+- 案: モデル ID は環境変数のまま保つ（再ビルド不要）。提出前に生成テストを 1 回通す。ログの `(HTTP 404)` を監視する。
+- 補足: `/healthz` は Cloud Run が Google の 404 を返す（アプリに届かない）ため `/health` に改名。改名後の動作は再デプロイで確認。
 
 ### [SPIKE-15] 🔴 アバターの動画
 - Veo は長時間ジョブ（数分）で費用も高く、ソースにより料金の記載が食い違う。リアルタイム応答には向かない。
@@ -75,6 +86,9 @@ SNS のドゥームスクロールで時間を受動的に消費してしまう�
 - **未確認**: 実際の Cloud Run へのデプロイ、Cloud Build 経由のビルド、`gcloud` の `--source .` が root の
   Dockerfile を使うこと。
 - 画像はイメージに焼き込むため、画像追加には再デプロイが必要。画像サイズが大きいと JSON が重くなる。
+- **Cloud Build で失敗 → 修正済み**: `COPY avatar_api/*.py .` が Cloud Build の旧 Docker ビルダーで
+  「destination must be a directory and end with a /」となった（ローカルの BuildKit は通る）。コピー先を `./` に変更し、
+  旧ビルダー（`DOCKER_BUILDKIT=0`）と BuildKit の両方でビルド・起動を確認。
 
 ### [SPIKE-17] 🔴 画像が JSON に base64 で載るためレスポンスが重い
 - 現状 1 応答 約 340〜360 KB（PNG 約 270 KB × 4/3）。デスクトップが数秒ごとに呼ぶと無駄が大きい。
