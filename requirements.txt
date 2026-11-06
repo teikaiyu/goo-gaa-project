@@ -1,2 +1,3 @@
 pyobjc-framework-Cocoa
 pywebview
+python-dotenv
