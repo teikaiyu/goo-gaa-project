@@ -38,6 +38,16 @@ def test_failing_sample_does_not_kill_the_thread():
     assert calls["n"] > 2  # kept polling after the exception
 
 
+def test_stop_does_not_wait_for_a_stuck_os_call():
+    # Regression: a thread stuck in warm_up()/osascript made stop() block (2s, then 30s worst case).
+    m = Monitor(sample=lambda: Snap(None, None), warm_up=lambda: time.sleep(5), poll_sec=0.01)
+    m.start()
+    time.sleep(0.1)  # the thread is now inside the 5s warm_up
+    t = time.monotonic()
+    m.stop()
+    assert time.monotonic() - t < 0.6
+
+
 def test_stop_returns_promptly():
     m = Monitor(sample=lambda: Snap(None, None), poll_sec=30.0)  # long poll interval
     m.start()

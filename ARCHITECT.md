@@ -18,6 +18,18 @@ goo-gaa-project/
 ├── PROBLEM.md             # 課題表（Spike / Backlog）
 ├── requirements.txt       # pyobjc-framework-Cocoa, pywebview
 ├── .gitignore             # .env / .venv/ / __pycache__/
+├── Dockerfile             # Cloud Run 用イメージ。images/ を COPY するためルートに置く
+├── .dockerignore          # 許可リスト方式（.env / .git / .venv / デスクトップ側を含めない）
+├── images/                # アバター画像（デザイナーが push）。Lumo_*.png 7 枚（機嫌への対応は images.py の表）
+├── avatar_api/            # [クラウド] Cloud Run サービス。デスクトップとは別ディレクトリ
+│   ├── mood.py            # [純粋] 社会メディア秒数 -> 機嫌 4 段階、フォールバック台詞
+│   ├── schemas.py         # リクエスト / レスポンスの JSON 契約
+│   ├── images.py          # MOOD_IMAGES（機嫌 -> ファイル名の表）と検索（大文字小文字を区別しない）
+│   ├── gemini.py          # Google 呼び出しはここだけ（台詞 = 構造化出力、画像生成は任意）
+│   ├── main.py            # POST /avatar、トークン検証、Google 障害時のフォールバック
+│   ├── requirements.txt / requirements-dev.txt
+│   ├── tests/test_api.py  # 偽 Gemini でのテスト（ネットワーク不要）
+│   └── README.md          # API・画像の命名規則・環境変数・デプロイ手順
 ├── goo_gaa/
 │   ├── __init__.py
 │   ├── classifier.py      # [純粋] アプリ名 / URL ホスト -> SNS か否か
@@ -98,9 +110,28 @@ OS なしでテストできるようにする。
 - 将来 `mood` やセリフなどを **追加** する。既存フィールドの名前変更・削除はしない（アバター差し替えを壊さないため）。
 - アプリ名・URL・タイトルは契約に含めない（プライバシー）。
 
-### 外部通信スキーマ（クラウド連携）
+### 外部通信スキーマ（デスクトップ → Cloud Run）
 
-未確定。Phase 2 以降でアバター UI / Gemini 連携を設計する際にここへ JSON 構造を追記する（PROBLEM.md [SPIKE-05]）。
+```
+デスクトップ (Monitor.state)  ──POST /avatar──►  Cloud Run (avatar_api)  ──►  Vertex AI (Gemini)
+  Authorization: Bearer <API_TOKEN>                │ mood.py で機嫌を決定（Google 不要）
+                                                   │ images/<mood>.<ext> を読む
+◄── 機嫌・台詞・行動・画像 ─────────────────────────┘ 台詞だけ Gemini（失敗時はフォールバック）
+```
+
+リクエスト（集計値のみ。URL・アプリ名・タイトルを入れるフィールドは存在しない）:
+```json
+{ "social_seconds": 3000, "total_seconds": 4000, "local_hour": 23, "goal": "study", "include_image": true }
+```
+レスポンス:
+```json
+{ "mood": "grumpy", "message": "…", "action": "…",
+  "image_base64": "<bytes>|null", "image_mime": "image/png|null",
+  "image_source": "file|generated|null", "source": "gemini|fallback" }
+```
+- `mood` は `happy | uneasy | grumpy | angry`（`avatar_api/mood.py` の `THRESHOLDS` で調整）。
+- 追加はするが既存フィールドの改名・削除はしない（UI 契約と同じ方針）。
+- `goal` は任意の自由入力（100 文字まで）で Gemini に送られる唯一のユーザー入力。
 
 ## 4. "Own the Why"
 
@@ -186,12 +217,52 @@ pywebview はページ配信用に `127.0.0.1` のランダムポートで待ち
 **スレッド構成**: macOS では GUI がメインスレッドを占有するため、ポーリングは `Monitor` のバックグラウンド
 スレッドへ移した（[SPIKE-08] 解決）。GUI モードでも前面アプリの切替が検知されることを実測で確認。
 
+### 4.10 バックエンド: Cloud Run + Vertex AI
+
+| | Pros | Cons |
+| :--- | :--- | :--- |
+| **Cloud Run → Vertex AI（採用）** | 実行基盤の必須要件を実際に満たす。サービスアカウントで Vertex AI を呼ぶため **API キーがリポジトリにもクライアントにも存在しない**。プロンプトをサーバ側に置け、アプリ再配布なしで人格を調整できる | ネットワークと デプロイが必要。公開エンドポイントは課金悪用の対象 → トークン + 予算アラートで対処。コールドスタートで初回が遅い |
+| デスクトップから Gemini 直呼び | 最も単純 | キーが全クライアントに乗る。Google Cloud 上で何も動かず必須要件を満たさない |
+| Firebase Hosting + Functions | 要件は満たせる | Hosting は静的で、結局 Functions が要る。Cloud Run 単体より部品が多い |
+
+**機嫌は Gemini ではなく純粋関数 `decide_mood()` が決める**: 決定的でテスト可能、無料、Google 障害時も動く。
+Gemini は「台詞と行動提案」の生成だけを担う（構造化出力で JSON の形を強制）。
+
+**障害時の劣化設計**: Gemini が失敗してもリクエストは 200 を返し、固定台詞（`source: "fallback"`）を使う。
+Google クライアントは「初回使用時」に生成する（起動時に作ると、設定不足が全リクエストの 500 になるため）。
+
+**セキュリティ**: Cloud Run 上（環境変数 `K_SERVICE` あり）で `API_TOKEN` 未設定なら 503 で起動を拒否。
+トークン比較は `hmac.compare_digest`（定数時間）。ログにはエラーの型のみ（メッセージはプロンプトを含みうる）。
+
+### 4.11 アバター画像: ファイル配信を優先、生成は任意
+
+| | Pros | Cons |
+| :--- | :--- | :--- |
+| **`images/` のファイルを返す（採用）** | デザイナーの絵がそのまま出る。無料・高速・決定的 | 画像追加には再デプロイが必要。JSON に base64 で載せるため大きい画像は不向き（現状 1 応答 約 350 KB） |
+| 毎回 Gemini で画像生成 | 絵を用意しなくてよい | 気分ごとに別キャラになりがち。費用と遅延。モデル ID が不安定 |
+| Cloud Storage から配信 | 再デプロイ不要 | 追加のインフラと権限 |
+
+**機嫌 → ファイルの対応は表（`MOOD_IMAGES`）で持つ**: デザイナーのファイル名（`Lumo_<表情>.png`、7 表情）を変えずに、
+機嫌 4 段階へ対応づけられる。`happy → Lumo_happy` / `uneasy → Lumo_disappointed` / `grumpy → Lumo_annoyed` /
+`angry → Lumo_angry`。未割り当ての `calm`（待機）/ `smile`（挨拶）/ `cheering`（達成）は将来の状態用。
+検討した代案: デザイナーに `happy.png` 等へ改名してもらう = コード変更は不要だが Lumo の命名と余剰 3 表情を失う。
+`<mood>.<ext>` の素の名前もフォールバックとして使える（表の名前が優先）。
+実フォルダに全機嫌分の画像があることはテスト（`test_repo_images_cover_every_mood`）で守る。
+
+**`images/` がリポジトリ直下にある理由**: Docker ビルドはビルドフォルダ内のファイルしかコピーできないため、
+`Dockerfile` もルートに置き、`avatar_api/` と `images/` の両方をコピーする。
+
+**ファイル名の大文字小文字**: macOS は区別しないが Cloud Run（Linux）は区別する。`Happy.PNG` が手元でだけ動いて
+デプロイ後に消えるのを防ぐため、`images.py` は小文字化して比較する（テストあり）。
+
+画像生成は `ENABLE_IMAGE_GENERATION=1` かつ該当ファイルが無い場合のみ（既定は無効）。
+
 ## 5. 技術スタックと要件との関係
 
 | 項目 | 現状 | 要件 (REQUIREMENTS.md) |
 | :--- | :--- | :--- |
-| 実行基盤 | ローカル macOS のみ | Google Cloud の実行基盤を 1 つ以上使用が必須（**未対応**） |
-| Google 技術 | 未使用 | Gemini / Google Cloud がコアであること（**未対応**） |
+| 実行基盤 | Cloud Run 用サービスをコード化済み（**未デプロイ**。ローカルで動作確認のみ） | Google Cloud の実行基盤を 1 つ以上使用が必須（**デプロイするまで未達**） |
+| Google 技術 | Gemini（台詞）を実装済みだが **実 Gemini は未検証**。モデル ID は未確認 | Gemini / Google Cloud がコアであること（**検証待ち**） |
 | カテゴリー | 未決定 | 医療・福祉 / 観光 / 教育 / エンタメ / クリエイティブのいずれか（**未決定**） |
 
 → [SPIKE-05] で扱う。

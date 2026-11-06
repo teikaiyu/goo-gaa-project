@@ -44,10 +44,18 @@ class Monitor:
         self._thread = threading.Thread(target=self._run, name="monitor", daemon=True)
         self._thread.start()
 
-    def stop(self) -> None:
+    def stop(self, timeout: float = 0.2) -> None:
+        """Ask the thread to stop, wait only briefly, then let go.
+
+        The thread may be stuck in a slow OS call (osascript up to 1s, or warm_up()
+        up to 30s on a permission prompt) which cannot be interrupted. It is a daemon
+        and holds nothing that needs flushing, so process exit safely discards it.
+        Waiting longer would only make the user stare at a frozen widget after
+        clicking the close button.
+        """
         self._stop.set()
         if self._thread:
-            self._thread.join(timeout=2.0)
+            self._thread.join(timeout=timeout)
 
     def state(self) -> dict[str, float]:
         """The UI contract. Only aggregates - never app names, URLs or titles (privacy)."""
