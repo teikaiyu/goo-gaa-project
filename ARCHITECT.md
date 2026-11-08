@@ -192,6 +192,12 @@ OS なしでテストできるようにする。
 `signal` で `threading.Event` を立て、ループは `stop.wait(POLL_SEC)` で待つ。`time.sleep()` と違い
 停止要求で即座に起きるため、Ctrl+C / SIGTERM で更新の途中で落ちない。
 
+**ウィジェット（`app.py`）の終了は「後始末 → `os._exit`」**: スレッドの停止（`Monitor.stop()` / `AvatarFeed.stop()`、
+いずれも短い `join`）まで行ったら `_exit_now()` でプロセスを確実に終了する。普通に `return` すると、pywebview が
+ページへの戻り値返送のために立てる **非デーモンのスレッド**（ウィンドウが既に無いと永遠に待つ）を Python が待ち続けて
+ハングするため（再現済み。[SPIKE-22]）。こちらのスレッドは daemon で、保存すべき状態もないので、待つものがない。
+出力は `os._exit` がフラッシュしないので、先に明示的にフラッシュする。
+
 ### 4.8 `frontmostApplication()` は run loop を回さないと更新されない（Spike の結論）
 
 `NSWorkspace.frontmostApplication()` は呼び出しごとに OS へ問い合わせず、**run loop 経由の通知で更新される
