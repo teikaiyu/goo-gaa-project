@@ -12,7 +12,9 @@ Avatar API settings come from the environment / a .env file (never from code):
   AVATAR_API_URL, AVATAR_API_TOKEN, optional AVATAR_REFRESH_SEC (see .env.example).
 Without them the widget still works and just shows the timer.
 """
+import os
 import sys
+import traceback
 from pathlib import Path
 
 import webview  # pywebview: renders HTML in macOS's native WKWebView
@@ -66,6 +68,21 @@ def _make_feed(monitor: Monitor) -> AvatarFeed | None:
     )
 
 
+def _exit_now(code: int = 0) -> None:
+    """Leave the process right away, after our own cleanup has finished.
+
+    Why not just return from main()? pywebview delivers the result of every JS -> Python call
+    (get_state(), quit() ...) by running evaluate_js on a NON-daemon thread. If the window is already
+    gone - and the x button's own quit() call is exactly that case - the thread waits forever for a
+    page that no longer exists, and Python's normal exit waits for it ("closing the window hangs the
+    app and Ctrl+C does nothing"; reproduced, the stuck threads were pywebview's `_call` threads).
+    Our own threads are daemons and hold nothing that needs flushing, so there is nothing to wait for.
+    """
+    sys.stdout.flush()  # os._exit skips the normal flush
+    sys.stderr.flush()
+    os._exit(code)
+
+
 def main() -> None:
     load_dotenv()  # reads .env into the environment if present (it is gitignored: it holds the token)
     monitor = Monitor(sample=get_snapshot, warm_up=warm_up)
@@ -87,12 +104,17 @@ def main() -> None:
         easy_drag=True,     # drag anywhere on the card to move it
         resizable=False,
     )
+    code = 0
     try:
         webview.start()     # blocks until the window closes
+    except BaseException:   # includes KeyboardInterrupt; report it, then still clean up and exit
+        traceback.print_exc()
+        code = 1
     finally:
         if feed:
             feed.stop()
         monitor.stop()      # always stop the threads, even on error (Graceful Shutdown)
+    _exit_now(code)
 
 
 if __name__ == "__main__":
