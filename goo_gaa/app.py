@@ -21,6 +21,7 @@ import webview  # pywebview: renders HTML in macOS's native WKWebView
 from dotenv import load_dotenv
 
 from goo_gaa.avatar_client import AvatarConfig, AvatarFeed, fetch_avatar
+from goo_gaa.local_avatar import local_image_data_url
 from goo_gaa.monitor import Monitor
 from goo_gaa.watcher_macos import get_snapshot, warm_up
 
@@ -43,8 +44,14 @@ class Api:
         return state
 
     def get_avatar_image(self, mood: str) -> str | None:
-        """The picture for a mood as a data: URL. The page asks once per mood, not every second."""
-        return self._feed.image_data_url(mood) if self._feed else None
+        """The picture for a mood as a data: URL. The page asks once per mood, not every second.
+
+        Order: the cloud's picture first (it is the designer's current art for that mood); otherwise the
+        one that ships with the app (see local_avatar.py), so the avatar shows at startup, offline, or
+        when the server has no picture for this mood. None = nothing at all: keep the placeholder.
+        """
+        from_cloud = self._feed.image_data_url(mood) if self._feed else None
+        return from_cloud or local_image_data_url(mood)
 
     def quit(self) -> None:
         if self._window:
