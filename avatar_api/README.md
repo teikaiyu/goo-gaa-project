@@ -77,6 +77,12 @@ gcloud run deploy avatar-api --source . --region asia-northeast1 \
 Then grant the Cloud Run service account the **Vertex AI User** role, and set a budget alert.
 Prefer Secret Manager over `--set-env-vars` for `API_TOKEN` once it works.
 
+## POST /research (memo pre-research)
+Body `{"note": "<=300 chars"}` -> `{summary, next_step, source}`. Uses Gemini with Google Search grounding (`RESEARCH_GROUNDING=0` turns search off). On any Google failure it answers 200 with `source: "fallback"` and empty text, and the desktop app retries later. The memo is never logged. Same bearer token as `/avatar`.
+
+## Deploy from a script (hand or CI)
+`GCP_PROJECT=<project> scripts/deploy_avatar_api.sh` - tests, then `gcloud run deploy`, then a smoke test (see the header of the script for all settings).
+
 ## Not done yet
 - **Video** (Veo): long-running job (minutes) and costly; needs an async flow, not this request/response.
 - Rate limiting, and sharing the picture cache across instances (e.g. Cloud Storage).

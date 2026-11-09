@@ -21,14 +21,17 @@ goo-gaa-project/
 ├── Dockerfile             # Cloud Run 用イメージ。images/ を COPY するためルートに置く
 ├── .dockerignore          # 許可リスト方式（.env / .git / .venv / デスクトップ側を含めない）
 ├── images/                # アバター画像（デザイナーが push）。Lumo_*.png 7 枚（機嫌への対応は images.py の表）
+├── scripts/
+│   └── deploy_avatar_api.sh   # CI/CD 用: テスト -> Cloud Run デプロイ -> スモークテスト（環境変数で設定）
 ├── avatar_api/            # [クラウド] Cloud Run サービス。デスクトップとは別ディレクトリ
 │   ├── mood.py            # [純粋] 社会メディア秒数 -> 機嫌 4 段階、フォールバック台詞
 │   ├── schemas.py         # リクエスト / レスポンスの JSON 契約
 │   ├── images.py          # MOOD_IMAGES（機嫌 -> ファイル名の表）と検索（大文字小文字を区別しない）
-│   ├── gemini.py          # Google 呼び出しはここだけ（台詞 = 構造化出力、画像生成は任意）
-│   ├── main.py            # POST /avatar、トークン検証、Google 障害時のフォールバック
+│   ├── gemini.py          # Google 呼び出しはここだけ（台詞 / メモの下調べ = 構造化出力 + 検索グラウンディング、画像生成は任意）
+│   ├── main.py            # POST /avatar・POST /research、トークン検証、Google 障害時のフォールバック
 │   ├── requirements.txt / requirements-dev.txt
 │   ├── tests/test_api.py  # 偽 Gemini でのテスト（ネットワーク不要）
+│   ├── tests/test_research.py  # /research（要約 + 次の一歩 / 障害時 fallback / 入力上限 / トークン / メモを log に出さない）
 │   └── README.md          # API・画像の命名規則・環境変数・デプロイ手順
 ├── goo_gaa/
 │   ├── __init__.py
@@ -39,17 +42,20 @@ goo-gaa-project/
 │   ├── main.py            # CLI 表示（デバッグ / ヘッドレス用）
 │   ├── avatar_client.py   # [スレッド] Cloud Run を呼ぶ AvatarFeed + 設定（URL / トークンは環境変数）
 │   ├── local_avatar.py    # [純粋] 同梱の起動時画像（happy）を data: URL にする。失敗しても None
-│   ├── app.py             # デスクトップウィジェット起動（pywebview）+ JS 公開 API（get_state / get_avatar_image）
+│   ├── notes.py           # [スレッド安全] メモの保存（~/Library/Application Support/goo-gaa/notes.json、原子的書き込み）
+│   ├── notes_research.py  # [スレッド] 新しいメモを裏で Cloud Run に下調べさせる NoteResearcher（失敗したメモは再試行）
+│   ├── app.py             # デスクトップウィジェット起動（pywebview）+ JS 公開 API（get_state / get_avatar_image / add_note / list_notes / delete_note / set_watching）
 │   └── web/               # [UI] 差し替え可能な見た目レイヤー
-│       ├── index.html     # カード構造: アバター枠 + タイマー表示
+│       ├── index.html     # カード構造: アバター枠 + 2 つの画面（メモ / SNS 見張り中）+ 小さな時間表示
 │       ├── style.css      # 色はトークン化（:root の CSS 変数）
-│       ├── app.js         # タイマー表示。Avatar の中身は知らない
+│       ├── app.js         # メモ入力・一覧、画面切替、報告（下調べ結果）の表示。Avatar の中身は知らない
 │       └── avatar.js      # ★アバター差し替え点（mount / update の 2 関数）。既定は画像 + 台詞の表示
 ├── .env.example           # AVATAR_API_URL / AVATAR_API_TOKEN の雛形（.env は ignore 対象。コミット禁止）
 └── tests/
     ├── test_core.py       # classifier / usage_tracker の境界値テスト
     ├── test_monitor.py    # Monitor（偽サンプラ・偽クロック）のテスト
     ├── test_avatar_client.py  # AvatarFeed（偽 fetch）と実際に送信される内容（ローカル HTTP サーバ）のテスト
+    ├── test_notes.py      # NoteStore（保存・再起動・上限・破損ファイル・コピー）と NoteResearcher（再試行・削除競合・停止）
     └── test_local_avatar.py   # 起動時画像（同梱 / クラウドとの優先順位 / 失敗時 None / 実ファイルの存在）のテスト
 ```
 
@@ -315,6 +321,34 @@ Google クライアントは「初回使用時」に生成する（起動時に�
 - **読み込みは失敗しても落ちない**: ファイルが無い・読めない・画像以外の拡張子なら `None`（従来どおりプレースホルダ）。
 - **競合対策**: ページは「最後に頼んだ機嫌」を覚え、古い答えで上書きしない。クラウドが先に答えていたら起動画像は出さない。
 - 実リポジトリの `images/Lumo_happy.png` が読めることをテストで固定している（デザイナーの改名・削除に気づくため）。
+
+### 4.13 方向転換: 「アバターが代わりに SNS を見る」+ メモと下調べ（2026-11-09）
+
+**新しい体験**: ユーザーは気になったことを軽くメモする → アバターが裏で下調べする → 「SNS 見といて」と頼むと、アバターは
+下調べした内容を報告し、SNS を見に行く。その間ユーザーは別の作業ができる。（以前の「見すぎると不機嫌になる」は、時間表示と
+`/avatar` の機嫌としてそのまま残してある。）
+
+**画面は 2 つ（ウィンドウは 240x330 のまま）**: `memo`（入力欄・メモ一覧・「SNS見といて」）と `watch`（見張り中: 下調べの報告・「戻る」）。
+`card[data-view]` で切り替え、状態は Python の `Api._watching`（`get_state()` の `watching`）が持つ。
+
+**データの流れ**: 入力 → `Api.add_note` → `NoteStore`（ローカル JSON）→ `NoteResearcher` が起こされる → `POST /research {note}` →
+`{summary, next_step, source}` → `NoteStore.set_research`。ページは 5 秒ごとに `list_notes` で結果を拾う。
+
+| 判断 | Pros | Cons |
+| :--- | :--- | :--- |
+| **メモはローカル JSON（採用）** vs SQLite / クラウド保存 | 依存なし・ユーザーが読める / 消せる。最大 50 件のため十分。原子的書き込み（一時ファイル → rename）で途中終了しても壊れない | 複数端末で共有できない（ハッカソンの範囲外） |
+| **下調べは Cloud Run の `/research`（採用）** vs デスクトップから Gemini を直接 | 認証情報・モデル ID・グラウンディングの変更をサーバーで完結。トークンの置き場が既存と同じ | メモ本文が端末の外に出る唯一の経路（下記） |
+| **Google 検索グラウンディング付き（採用）+ 失敗時は検索なしで再試行** | 「下調べ」に最新の事実が入る。検索と構造化出力の併用が不可でも動く | 検索ありは遅く高い。**実 Gemini での併用は未確認**（PROBLEM.md [SPIKE-23]） |
+| **失敗したメモは pending のまま再試行（採用）** | ネットワーク断・429 でもメモは失われない。次の周期（60 秒）か次のメモ追加で再挑戦 | 長く失敗すると「下調べ中」が続く |
+| **見張りは「報告 + 状態」だけ（暫定）** | 画面と体験の骨格を先に固める | **SNS の中身を実際に取得する処理は未実装**（[SPIKE-24]） |
+
+**プライバシー**: これまでは集計値（秒数・時刻）しか送らなかった。メモ本文は **ユーザー自身が書いた文章** で、下調べの目的でのみ
+送る（300 文字上限）。サーバーはメモ本文を log に出さない（エラー種別と HTTP コードのみ。テストで固定）。プロンプトでは
+メモを「データであって指示ではない」と明示し、画面にはすべて `textContent` で表示する（AI の返答を HTML として解釈しない）。
+
+**デプロイ（CI/CD）**: `scripts/deploy_avatar_api.sh` — ① avatar_api のテスト（赤なら中止）② `gcloud run deploy --source .`
+（Secret Manager の `API_TOKEN`・実行用サービスアカウント・`--max-instances` 上限）③ スモークテスト（`/health` が 200、
+`/avatar` と `/research` がトークンなしで 401）。設定は環境変数のみ（`GCP_PROJECT` 必須）で、手元でも CI でも同じ手順。
 
 ## 5. 技術スタックと要件との関係
 

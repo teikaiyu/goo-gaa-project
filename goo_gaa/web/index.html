@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="card">
+  <main class="card" id="card" data-view="memo">
     <button class="close" id="close" aria-label="Quit" title="Quit">&times;</button>
 
     <!-- AVATAR SLOT: the only place the avatar lives. See avatar.js for the contract. -->
@@ -15,11 +15,25 @@
     <!-- Speech line: the avatar's words, set by avatar.js. Hidden until the cloud has answered. -->
     <p id="speech" class="speech" hidden></p>
 
-    <!-- READOUT: stays the same when the avatar is swapped. -->
-    <section class="readout">
-      <div class="time" id="time" aria-live="off">--:--:--</div>
-      <div class="label">on social media (this session)</div>
+    <!-- VIEW 1: jot down what caught your eye; the avatar researches it in the background. -->
+    <section class="view view-memo" id="view-memo">
+      <form id="note-form" class="note-form" autocomplete="off">
+        <textarea id="note-input" rows="2" maxlength="300" placeholder="気になったことをメモ…"
+                  aria-label="気になったことをメモ"></textarea>
+        <button type="submit" class="btn small" id="note-add">追加</button>
+      </form>
+      <ul id="note-list" class="note-list" aria-label="メモ"></ul>
+      <button type="button" class="btn primary" id="watch-start">SNS見といて</button>
     </section>
+
+    <!-- VIEW 2: the avatar is watching SNS and reports what it prepared. -->
+    <section class="view view-watch" id="view-watch">
+      <p class="watch-status" id="watch-status">SNSを見ています…</p>
+      <ul id="brief-list" class="note-list brief" aria-label="下調べの結果"></ul>
+      <button type="button" class="btn" id="watch-stop">戻る</button>
+    </section>
+
+    <div class="time-line"><span id="time">00:00:00</span> on social media</div>
   </main>
 
   <script src="avatar.js"></script>

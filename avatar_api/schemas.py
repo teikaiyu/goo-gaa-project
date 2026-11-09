@@ -18,6 +18,18 @@ class AvatarRequest(BaseModel):
     include_image: bool = True
 
 
+class ResearchRequest(BaseModel):
+    # The user's own short memo ("what caught my eye"). It is the one place free text leaves the
+    # machine, so it is length-capped, and the server never logs it.
+    note: str = Field(min_length=1, max_length=300)
+
+
+class ResearchResponse(BaseModel):
+    summary: str     # background the avatar looked up; "" when source == "fallback"
+    next_step: str   # one small thing to do next
+    source: Literal["gemini", "fallback"]
+
+
 class AvatarResponse(BaseModel):
     mood: Mood
     message: str
