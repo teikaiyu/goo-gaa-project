@@ -1,13 +1,16 @@
-// Lumo for iPhone: Home -> (open an SNS app) -> Intercept -> Patrol (focus time) -> Report.
+// Lumo: Home -> Patrol (focus time; opening a watched SNS shows the Shield) -> Report.
 // Cupertino widgets, so it looks and behaves like iOS (Apple HIG).
+// The Shield is shown by the Lumo Chrome extension (lumo_extension/), which sends watched SNS tabs here.
 import 'dart:async';
+import 'dart:js_interop';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show CircularProgressIndicator; // no Cupertino ring with progress
-import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:web/web.dart' as web;
 
+import 'google_auth.dart';
 import 'lumo.dart';
 
 // Google blue in light mode (5.4:1 on white); a lighter blue in dark mode so it still reads.
@@ -17,11 +20,11 @@ const _onBlue = CupertinoDynamicColor.withBrightness(color: CupertinoColors.whit
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final lumo = await Lumo.load();
-  final from = Uri.base.queryParameters['from']; // set by the iOS Shortcut that fires when an SNS app opens
-  final Widget first = lumo.endsAt != null
+  final shield = Uri.base.queryParameters['shield']; // set by the extension when a watched SNS is opened
+  final Widget first = serviceNames.containsKey(shield)
+      ? ShieldPage(lumo, shield!)
+      : lumo.endsAt != null
       ? PatrolPage(lumo)
-      : serviceNames.containsKey(from)
-      ? InterceptPage(lumo, from!)
       : HomePage(lumo);
   runApp(
     CupertinoApp(
@@ -49,6 +52,7 @@ class LumoSays extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     children: [
       Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16), // never touches the screen edge
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
@@ -76,14 +80,10 @@ Widget _secondary(String label, VoidCallback onPressed) => SizedBox(
   child: CupertinoButton(onPressed: onPressed, child: Text(label)),
 );
 
-/// 90 -> "1時間30分", 25 -> "25分", 60 -> "1時間".
-String minutesLabel(int m) => [if (m >= 60) '${m ~/ 60}時間', if (m % 60 > 0 || m == 0) '${m % 60}分'].join();
-
 void _go(BuildContext context, Widget page) =>
     Navigator.of(context).pushAndRemoveUntil(CupertinoPageRoute(builder: (_) => page), (_) => false);
 
-/// Leave the choice with the user, without guilt (HIG Agency): the web version, not the native app,
-/// so the Shortcut does not fire again.
+/// Leave the choice with the user, without guilt (HIG Agency).
 void _openMyself(String service) => launchUrl(Uri.parse(serviceWebUrls[service]!), webOnlyWindowName: '_self');
 
 // ---------- 1. Home ----------
@@ -129,8 +129,11 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
             CupertinoListSection.insetGrouped(
-              header: const Text('Lumo がかわりに見るアプリ'),
-              footer: const Text('集中が終わったら、Lumo が見てきたことを教えてくれます'),
+              header: const Text('集中をじゃまするアプリ'),
+              footer: const Text(
+                '集中しているあいだは、ここで選んだアプリを Lumo が見張ります。'
+                'YouTube は Lumo がきみの登録チャンネルを見てきて、終わったらお話ししてくれます',
+              ),
               children: [
                 for (final s in serviceNames.entries)
                   CupertinoListTile(
@@ -176,14 +179,16 @@ class _HomePageState extends State<HomePage> {
                     '始める',
                     lumo.watched.isEmpty || lumo.minutes == 0
                         ? null
-                        : () {
+                        : () async {
+                            // Ask Google for YouTube access first (it needs this tap to open its window).
+                            if (lumo.watched.contains('youtube') && !lumo.youtubeReady && youtubeConfigured) {
+                              final access = await askYouTube();
+                              if (access != null) lumo.setYouTubeAccess(access.$1, access.$2);
+                            }
                             lumo.start();
-                            _go(context, PatrolPage(lumo));
+                            if (context.mounted) _go(context, PatrolPage(lumo));
                           },
                   ),
-                  _secondary('SNS を開いたときに Lumo を呼ぶ', () {
-                    showCupertinoModalPopup(context: context, builder: (_) => const ShortcutSheet());
-                  }),
                 ],
               ),
             ),
@@ -194,37 +199,44 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// ---------- 2. Intercept (opened by the iOS Shortcut when an SNS app starts) ----------
+// ---------- 2. Shield (a watched SNS was opened during the patrol) ----------
 
-class InterceptPage extends StatelessWidget {
-  const InterceptPage(this.lumo, this.from, {super.key});
+/// Tells the Lumo extension what the user chose. The extension's content script on this page passes it on
+/// (only messages from this same page are accepted there).
+void _toExtension(String action) => web.window.postMessage({'lumo': action}.jsify(), web.window.location.origin.toJS);
+
+class ShieldPage extends StatelessWidget {
+  const ShieldPage(this.lumo, this.service, {super.key});
   final Lumo lumo;
-  final String from;
+  final String service;
 
   @override
-  Widget build(BuildContext context) {
-    final task = lumo.task.isEmpty ? 'やることを進めて' : '「${lumo.task}」をやって';
-    return CupertinoPageScaffold(
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              const Spacer(),
-              LumoSays('Lumo_happy.png', 'かわりに見てきてあげる！\nそのあいだに$taskてね', size: 240, label: '目を輝かせる Lumo'),
-              const Spacer(),
-              _primary('見てきてもらう（${minutesLabel(lumo.minutes)}）', () {
-                lumo.watched = {...lumo.watched, from};
-                lumo.start();
-                _go(context, PatrolPage(lumo));
-              }),
-              _secondary('自分で ${serviceNames[from]} を見る', () => _openMyself(from)),
-            ],
-          ),
+  Widget build(BuildContext context) => CupertinoPageScaffold(
+    child: SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            const Spacer(),
+            // shortcut: placeholder picture until the new art arrives (same file name -> just replace it).
+            LumoSays(
+              'Lumo_happy_phone.png',
+              '今ボクが見てるよ〜\n${serviceNames[service]} はまかせてね',
+              size: 260,
+              label: '楽しそうにスマホを見る Lumo',
+            ),
+            const Spacer(),
+            _primary('やっぱやめとく', () {
+              _toExtension('close'); // the extension closes this tab
+              // Without the extension (page opened by hand): back to the patrol, nothing else to close.
+              _go(context, lumo.endsAt != null ? PatrolPage(lumo) : HomePage(lumo));
+            }),
+            _secondary('開く', () => _toExtension('allow')), // the extension lets this tab through
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 // ---------- 3. Patrol (= the user's focus time) ----------
@@ -239,14 +251,13 @@ class PatrolPage extends StatefulWidget {
 
 class _PatrolPageState extends State<PatrolPage> {
   late final DateTime _endsAt = widget.lumo.endsAt ?? DateTime.now();
-  late final int _total = widget.lumo.minutes * 60;
+  late final int _total = _endsAt.difference(widget.lumo.startedAt).inSeconds;
   Timer? _tick;
   bool _done = false;
 
   @override
   void initState() {
     super.initState();
-    widget.lumo.look(); // Lumo goes to look right away; the user just works
     _tick = Timer.periodic(const Duration(seconds: 1), (_) => _update());
     _update();
   }
@@ -273,10 +284,8 @@ class _PatrolPageState extends State<PatrolPage> {
     if (_done || !mounted) return;
     _done = true;
     _tick?.cancel();
-    // Finished looking in time -> what it found. Still looking -> nothing this time (no waiting).
-    final report = widget.lumo.report ?? Report.notFound;
     widget.lumo.stop();
-    _go(context, ReportPage(widget.lumo, report, _total));
+    _go(context, ReportPage(widget.lumo, widget.lumo.fetchReport())); // Lumo comes back from patrol now
   }
 
   @override
@@ -339,8 +348,10 @@ class _PatrolPageState extends State<PatrolPage> {
               ),
               const Spacer(),
               _primary('完了して Lumo を呼び戻す', _finish),
-              _secondary('自分で見る', () {
+              _secondary('自分で見る', () async {
                 widget.lumo.stop();
+                _toExtension('sync'); // the patrol is over: the extension must not shield the page opened next
+                await Future<void>.delayed(const Duration(milliseconds: 500));
                 _openMyself(widget.lumo.watched.first);
               }),
             ],
@@ -354,72 +365,58 @@ class _PatrolPageState extends State<PatrolPage> {
 // ---------- 4. Report ----------
 
 class ReportPage extends StatelessWidget {
-  const ReportPage(this.lumo, this.report, this.totalSeconds, {super.key});
+  const ReportPage(this.lumo, this.report, {super.key});
   final Lumo lumo;
-  final Report report;
-  final int totalSeconds;
-
-  @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
-        backgroundColor: CupertinoColors.systemGroupedBackground,
-        child: SafeArea(
-          child: ListView(padding: const EdgeInsets.symmetric(vertical: 24), children: [
-            LumoSays(
-              report.items.isEmpty ? 'Lumo_disappointed.png' : 'Lumo_cheering.png',
-              'えらい！${(totalSeconds / 60).round()}分がんばったね\n${report.text}',
-              label: 'ほめる Lumo',
-            ),
-            if (report.items.isNotEmpty)
-              CupertinoListSection.insetGrouped(
-                header: const Text('Lumo が見てきたこと'),
-                footer: const Text('Gemini が画面を読んでまとめたものです。まちがうこともあります'),
-                children: [
-                  for (final i in report.items)
-                    CupertinoListTile(title: Text(i.title), subtitle: Text(i.gist, maxLines: 3)),
-                ],
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: _primary('次のタスクに進む', () => _go(context, HomePage(lumo))),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: _primary('次のタスクに進む', () => _go(context, HomePage(lumo))),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-// ---------- sheets ----------
-
-class ShortcutSheet extends StatelessWidget {
-  const ShortcutSheet({super.key});
+  final Future<Report> report;
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoActionSheet(
-      title: const Text('SNS を開いたときに Lumo を呼ぶ'),
-      message: const Text(
-        '「ショートカット」App →「オートメーション」→「＋」→「App」で、'
-        'アプリを選んで「開いている」「すぐに実行」にします。'
-        'アクションは「URLを開く」にして、下でコピーした URL を貼ってください。',
+    // How long the user really focused (called back early -> the real time, not the planned one).
+    final focused = (DateTime.now().difference(lumo.startedAt).inSeconds / 60).round();
+    return CupertinoPageScaffold(
+      backgroundColor: CupertinoColors.systemGroupedBackground,
+      child: SafeArea(
+        child: FutureBuilder<Report>(
+          future: report,
+          builder: (context, snap) {
+            final r = snap.data;
+            return ListView(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              children: [
+                if (r == null) ...[
+                  const LumoSays('Lumo_happy_phone.png', 'ただいま！\nいま報告をまとめてるね…', label: 'スマホを見る Lumo'),
+                  const SizedBox(height: 16),
+                  const CupertinoActivityIndicator(radius: 14),
+                ] else ...[
+                  LumoSays(
+                    r.items.isEmpty ? 'Lumo_disappointed.png' : 'Lumo_cheering.png',
+                    'えらい！${minutesLabel(focused)}がんばったね\n${r.text}',
+                    label: 'ほめる Lumo',
+                  ),
+                  if (r.items.isNotEmpty)
+                    CupertinoListSection.insetGrouped(
+                      header: const Text('パトロール中に YouTube で見つけたよ'),
+                      footer: const Text('きみの登録チャンネルの新着から、Gemini が選んでまとめました'),
+                      children: [
+                        for (final i in r.items)
+                          CupertinoListTile(title: Text(i.title), subtitle: Text(i.gist, maxLines: 3)),
+                      ],
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                    child: _primary('次のタスクに進む', () => _go(context, HomePage(lumo))),
+                  ),
+                ],
+              ],
+            );
+          },
+        ),
       ),
-      actions: [
-        for (final s in serviceNames.entries)
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: '${Uri.base.origin}/?from=${s.key}'));
-              Navigator.pop(context);
-            },
-            child: Text('${s.value} 用の URL をコピー'),
-          ),
-      ],
-      cancelButton: CupertinoActionSheetAction(onPressed: () => Navigator.pop(context), child: const Text('閉じる')),
     );
   }
 }
+
+// ---------- sheets ----------
 
 class SettingsSheet extends StatelessWidget {
   const SettingsSheet(this.lumo, {super.key});

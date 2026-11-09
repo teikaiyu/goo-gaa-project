@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lumo_app/main.dart';
+import 'package:lumo_app/lumo.dart';
 
 void main() {
   test('minutes read like the iPhone timer', () {

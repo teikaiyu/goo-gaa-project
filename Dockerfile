@@ -9,9 +9,6 @@ WORKDIR /app
 # BuildKit accepts it. The trailing slash works with both.
 COPY avatar_api/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-# Headless Chromium for /patrol. Installed to a shared path so the non-root user below can run it.
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN playwright install --with-deps chromium
 
 COPY avatar_api/*.py ./
 COPY images/ images/

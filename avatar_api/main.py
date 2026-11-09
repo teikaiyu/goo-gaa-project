@@ -6,6 +6,7 @@ import base64
 import hmac
 import os
 import sys
+import time
 from functools import lru_cache
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -14,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from gemini import AvatarGenerator
 from images import images_dir, load_image
 from mood import FALLBACK_LINES, Mood, decide_mood
-from schemas import (AvatarRequest, AvatarResponse, PatrolRequest, RecapRequest, RecapResponse, WatchItem,
+from schemas import (AvatarRequest, AvatarResponse, PatrolRequest, PatrolResponse, RecapRequest, RecapResponse, WatchItem,
                      WatchResponse)
 
 app = FastAPI(title="goo-gaa avatar API")
@@ -87,18 +88,21 @@ def watch(gen: AvatarGenerator = Depends(get_generator)) -> WatchResponse:
         return WatchResponse(report="", items=[], source="fallback")
 
 
-@app.post("/patrol", response_model=WatchResponse, dependencies=[Depends(check_token)])
-def patrol(req: PatrolRequest, gen: AvatarGenerator = Depends(get_generator)) -> WatchResponse:
-    """Lumo really looks at the user's SNS (logged-in browser + Gemini Computer Use) and tells what it saw.
-    Any trouble (no saved session, login wall, Google down) -> source="fallback" with empty text; the app
-    then falls back to /watch. Nothing seen is logged."""
+@app.post("/patrol", response_model=PatrolResponse, dependencies=[Depends(check_token)])
+def patrol(req: PatrolRequest, gen: AvatarGenerator = Depends(get_generator)) -> PatrolResponse:
+    """Lumo's patrol report from the user's YouTube subscriptions (videos fetched by the app with the user's
+    own permission). Google trouble -> status="failed" (the app then lists the videos itself). Video text
+    and channel names are never logged."""
+    t0 = time.monotonic()
     try:
-        r = gen.patrol(req.services)
-        items = [WatchItem(title=i.title[:30], gist=i.gist[:60]) for i in r.items[:5]]
-        return WatchResponse(report=r.report, items=items, source="gemini")
+        r = gen.youtube_report([v.model_dump() for v in req.videos], req.channels, req.minutes)
     except Exception as e:
         _warn("patrol", e)
-        return WatchResponse(report="", items=[], source="fallback")
+        return PatrolResponse(report="", items=[], status="failed")
+    finally:
+        print(f"[patrol] {len(req.videos)} videos in {time.monotonic() - t0:.1f}s", file=sys.stderr)
+    items = [WatchItem(title=i.title[:30], gist=i.gist[:60]) for i in r.items[:5]]
+    return PatrolResponse(report=r.report, items=items, status="ok")
 
 
 @app.post("/avatar", response_model=AvatarResponse, dependencies=[Depends(check_token)])

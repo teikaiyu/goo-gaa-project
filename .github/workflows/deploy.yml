@@ -5,6 +5,7 @@
 # (a short-lived token GitHub gets for THIS repo only). One-time setup: scripts/setup_cicd.sh.
 # Repository variables it needs (Settings > Secrets and variables > Actions > Variables):
 #   GCP_PROJECT, WIF_PROVIDER, DEPLOY_SA   (printed by scripts/setup_cicd.sh)
+#   GOOGLE_CLIENT_ID                       (OAuth client ID, see docs/cicd.md)
 name: test-and-deploy
 
 on:
@@ -28,6 +29,11 @@ jobs:
         run: |
           pip install -q -r avatar_api/requirements-dev.txt
           cd avatar_api && python -m pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Extension tests
+        run: node --test lumo_extension/rules.test.mjs
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -61,5 +67,6 @@ jobs:
       - name: Deploy (same script as by hand)
         env:
           GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }} # public OAuth client ID for "allow Lumo to read YouTube"
           SKIP_TESTS: "1" # the test job already ran them
         run: scripts/deploy_avatar_api.sh

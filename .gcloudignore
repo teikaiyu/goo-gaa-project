@@ -6,4 +6,3 @@
 **/__pycache__/
 .env
 lumo_app/.dart_tool/
-sns-session*.json

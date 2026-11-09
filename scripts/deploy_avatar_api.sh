@@ -10,8 +10,8 @@
 #   RUNTIME_SA    default avatar-api-sa@${GCP_PROJECT}.iam.gserviceaccount.com
 #                 (needs roles/aiplatform.user + roles/secretmanager.secretAccessor)
 #   SECRET_NAME   default api-token     Secret Manager secret that holds API_TOKEN
-#   SESSION_SECRET default sns-session  Secret Manager secret with the SNS login (scripts/save_sns_session.py).
-#                 Optional: without it the service still deploys, and /patrol falls back (the app uses /watch).
+#   GOOGLE_CLIENT_ID          OAuth client ID (public) that lets users allow Lumo to read their YouTube.
+#                 Without it the app still works, and Lumo says it could not connect to YouTube.
 #   MAX_INSTANCES default 2             cost guard: caps how many copies can run at once
 #   SKIP_TESTS    set to 1 to skip the pre-deploy test run
 #
@@ -26,7 +26,6 @@ SERVICE="${SERVICE:-avatar-api}"
 RUNTIME_SA="${RUNTIME_SA:-avatar-api-sa@${GCP_PROJECT}.iam.gserviceaccount.com}"
 SECRET_NAME="${SECRET_NAME:-api-token}"
 MAX_INSTANCES="${MAX_INSTANCES:-2}"
-SESSION_SECRET="${SESSION_SECRET:-sns-session}"
 
 # Always run from the repo root: the Docker build needs both avatar_api/ and images/.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -46,20 +45,11 @@ fi
 
 echo "==> building the iPhone web app"
 # The Dockerfile copies lumo_app/build/web, so it must be fresh before the upload.
-(cd lumo_app && flutter build web --release)
-
-SECRETS="API_TOKEN=${SECRET_NAME}:latest"
-if gcloud secrets describe "$SESSION_SECRET" --project "$GCP_PROJECT" >/dev/null 2>&1; then
-  SECRETS+=",/secrets/sns-session.json=${SESSION_SECRET}:latest"
-else
-  # Mounting a missing secret would fail the whole deploy.
-  echo "note: secret ${SESSION_SECRET} not found -> deploying without the SNS login (/patrol will fall back)"
-fi
+[[ -n "${GOOGLE_CLIENT_ID:-}" ]] || echo "note: GOOGLE_CLIENT_ID is not set -> Lumo cannot connect to YouTube"
+(cd lumo_app && flutter build web --release --dart-define=GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}")
 
 echo "==> deploying ${SERVICE} to ${GCP_PROJECT}/${REGION}"
 # --source . : Cloud Build builds the root Dockerfile, so no local Docker is needed.
-# --memory/--timeout/--concurrency: /patrol runs a headless Chromium (~300MB) for a minute or two;
-#   a few at once per instance keeps 2Gi from running out.
 # --allow-unauthenticated: the desktop app has no Google identity; the bearer token (API_TOKEN, from
 #   Secret Manager) is the lock, and the service refuses to start serving without it.
 gcloud run deploy "$SERVICE" \
@@ -68,8 +58,7 @@ gcloud run deploy "$SERVICE" \
   --allow-unauthenticated \
   --max-instances "$MAX_INSTANCES" \
   --set-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT}" \
-  --set-secrets "$SECRETS" \
-  --memory 2Gi --timeout 600 --concurrency 4 \
+  --set-secrets "API_TOKEN=${SECRET_NAME}:latest" \
   --quiet
 
 echo "==> smoke test"

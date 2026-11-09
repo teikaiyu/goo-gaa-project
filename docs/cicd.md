@@ -32,15 +32,36 @@ Google Cloud はそれを確認し、デプロイ専用のサービスアカウ�
 - このリポジトリ以外からの身分証は断る（`scripts/setup_cicd.sh` の `attribute-condition`）。
 - `github-deployer` が持つのはデプロイに必要な権限だけ。Gemini を呼ぶ権限や Secret の中身を読む権限は持たない。
 
-アプリが使う秘密（API トークン、SNS のログイン情報）は Secret Manager にあり、Cloud Run が起動時に読み込む。GitHub には置かない。
+アプリが使う秘密（API トークン）は Secret Manager にあり、Cloud Run が起動時に読み込む。GitHub には置かない。
 
 ## 最初に 1 回だけやること（プロジェクトのオーナー）
 
 1. `GCP_PROJECT=goo-gaa-513906 scripts/setup_cicd.sh` を実行する。
 2. 最後に表示される 3 つの値を、GitHub の Settings > Secrets and variables > Actions > **Variables** に登録する。
    `GCP_PROJECT`、`WIF_PROVIDER`、`DEPLOY_SA`
-3. （任意）SNS のログイン情報を Secret に入れる：`gcloud secrets create sns-session --data-file=~/.lumo/sns-session.json`
-   無くてもデプロイはできる。その場合 Lumo は「話題」（`/watch`）を報告する。
+3. YouTube を Lumo に見せるための OAuth クライアントを作る（Google Cloud コンソール。下の「YouTube 連携の準備」）。
+   できた **クライアント ID** を GitHub の Variables に `GOOGLE_CLIENT_ID` として登録する。
+   無くてもデプロイはできる。その場合 Lumo は「YouTube とつながってなかった」と報告する。
+
+## YouTube 連携の準備（コンソールで 1 回）
+
+Lumo が見に行くのは、ユーザー本人が許可した YouTube だけ（公式の YouTube Data API、読み取り専用）。
+許可で受け取る鍵はユーザーのブラウザの中だけにあり、Lumo のサーバーには送らない。
+
+1. **API とサービス** → **ライブラリ** で「YouTube Data API v3」を有効にする（`setup_cicd.sh` でも有効になる）。
+2. **Google Auth Platform** → **ブランディング**：アプリ名「Lumo」、サポートメールを入れる。
+3. **対象**：ユーザーの種類は「外部」。公開ステータスが「テスト中」の間は、**テストユーザー** に追加した Google アカウントだけが許可できる
+   （チームと、デモで使うアカウントを追加する）。
+4. **データアクセス**：スコープに `.../auth/youtube.readonly` を追加する。
+5. **クライアント** → **クライアントを作成** → 種類「ウェブ アプリケーション」。**承認済みの JavaScript 生成元** に
+   `http://localhost:8080` と Cloud Run の URL（`https://…run.app`）を入れる。
+6. 表示された **クライアント ID**（`….apps.googleusercontent.com`。秘密ではない）を使う。
+   - 手元: `flutter build web --release --dart-define=GOOGLE_CLIENT_ID=<クライアント ID>`
+   - 自動デプロイ: GitHub の Variables の `GOOGLE_CLIENT_ID`
+
+審査員など、テストユーザー以外にも使ってもらうには、公開ステータスを「本番」にする。
+`youtube.readonly` は機密スコープなので、Google の審査が済むまでは「Google はこのアプリを確認していません」と出る
+（「詳細」→「Lumo に移動」で進める。審査前は 100 ユーザーまで）。
 
 ## 困ったとき
 

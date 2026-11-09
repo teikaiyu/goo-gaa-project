@@ -21,7 +21,8 @@ g() { gcloud --project "$GCP_PROJECT" --quiet "$@"; }
 
 echo "==> APIs"
 g services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
-  secretmanager.googleapis.com iamcredentials.googleapis.com sts.googleapis.com
+  secretmanager.googleapis.com iamcredentials.googleapis.com sts.googleapis.com \
+  youtube.googleapis.com  # the app reads the user's YouTube with the user's own permission
 
 echo "==> deployer service account"
 g iam service-accounts describe "$DEPLOY_SA" >/dev/null 2>&1 ||
@@ -29,8 +30,7 @@ g iam service-accounts describe "$DEPLOY_SA" >/dev/null 2>&1 ||
 
 # Only what `gcloud run deploy --source .` and the smoke test need.
 for role in roles/run.admin roles/cloudbuild.builds.editor roles/storage.admin \
-            roles/artifactregistry.writer roles/serviceusage.serviceUsageConsumer \
-            roles/secretmanager.viewer; do
+            roles/artifactregistry.writer roles/serviceusage.serviceUsageConsumer; do
   g projects add-iam-policy-binding "$GCP_PROJECT" --member "serviceAccount:${DEPLOY_SA}" \
     --role "$role" --condition None >/dev/null
 done
