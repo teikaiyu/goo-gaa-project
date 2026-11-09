@@ -5,7 +5,7 @@ so they cannot be sent by accident. Only aggregates (and an optional short goal)
 """
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from mood import Mood
 
@@ -27,6 +27,44 @@ class ResearchRequest(BaseModel):
 class ResearchResponse(BaseModel):
     summary: str     # background the avatar looked up; "" when source == "fallback"
     next_step: str   # one small thing to do next
+    source: Literal["gemini", "fallback"]
+
+
+class WatchRequest(BaseModel):
+    # What the user is curious about (their own short memos). Optional: empty = "just see what is going on".
+    topics: list[str] = Field(default_factory=list, max_length=5)
+
+    @field_validator("topics")
+    @classmethod
+    def _cap_each(cls, v: list[str]) -> list[str]:
+        return [t.strip()[:100] for t in v if t.strip()]  # trim + cap, drop blanks
+
+
+class WatchItem(BaseModel):
+    title: str   # what it was about (<= 30 chars)
+    gist: str    # what people were saying (<= 60 chars)
+
+
+class WatchResponse(BaseModel):
+    report: str              # the avatar's spoken report, first person ("" when source == "fallback")
+    items: list[WatchItem]   # up to 3 things it "saw"
+    source: Literal["gemini", "fallback"]
+
+
+class RecapRequest(BaseModel):
+    # What the avatar saw while the user was away (the client sends back the items /watch gave it),
+    # and for how long. The recap is written ONLY from these: nothing new is looked up.
+    items: list[WatchItem] = Field(max_length=10)
+    minutes: float = Field(ge=0, le=1_440)
+
+    @field_validator("items")
+    @classmethod
+    def _cap_items(cls, v: list[WatchItem]) -> list[WatchItem]:
+        return [WatchItem(title=i.title[:30], gist=i.gist[:60]) for i in v]
+
+
+class RecapResponse(BaseModel):
+    recap: str  # how it was, in the avatar's voice ("" when source == "fallback")
     source: Literal["gemini", "fallback"]
 
 

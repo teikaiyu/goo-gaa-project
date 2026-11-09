@@ -25,6 +25,7 @@ from goo_gaa.local_avatar import local_image_data_url
 from goo_gaa.monitor import Monitor
 from goo_gaa.notes import NoteStore
 from goo_gaa.notes_research import NoteResearcher, fetch_research
+from goo_gaa.watch import WatchSession, fetch_recap, fetch_watch
 from goo_gaa.watcher_macos import get_snapshot, warm_up
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -34,8 +35,10 @@ class Api:
     """Everything the page may call. Public methods here == the JS-visible surface."""
 
     def __init__(self, monitor: Monitor, feed: AvatarFeed | None = None,
-                 notes: NoteStore | None = None, researcher: NoteResearcher | None = None) -> None:
+                 notes: NoteStore | None = None, researcher: NoteResearcher | None = None,
+                 watch: WatchSession | None = None) -> None:
         self._monitor = monitor  # leading underscore: not exposed to JS
+        self._watch = watch or WatchSession(None)  # None fetch = offline: reports that it could not look
         self._feed = feed
         self._notes = notes or NoteStore()
         self._researcher = researcher
@@ -48,6 +51,7 @@ class Api:
         state = dict(self._monitor.state())
         state["avatar"] = self._feed.state() if self._feed else None
         state["watching"] = self._watching
+        state["watch"] = self._watch.state()  # {status, report, items}: what the avatar saw
         return state
 
     # ---------- memos ----------
@@ -67,8 +71,17 @@ class Api:
 
     # ---------- "watch SNS for me" ----------
     def set_watching(self, on: bool) -> bool:
-        """The user hands SNS over to the avatar (True) or takes it back (False)."""
+        """The user hands SNS over to the avatar (True) or takes it back (False).
+
+        Handing over starts a WatchSession: the cloud looks at what is being talked about (guided by the
+        user's memos), keeps looking while the user is away, and get_state()["watch"] carries what it saw.
+        Taking it back makes the avatar tell how it went (the "recap" in get_state()["watch"])."""
         self._watching = bool(on)
+        if self._watching:
+            topics = [n["text"] for n in self._notes.all()[:5]]  # newest 5 memos
+            self._watch.start(topics)
+        else:
+            self._watch.finish()  # "back": the avatar now tells how it went (shown via get_state()["watch"])
         return self._watching
 
     def get_avatar_image(self, mood: str) -> str | None:
@@ -96,6 +109,15 @@ def _load_config() -> AvatarConfig | None:
         print("[info] avatar disabled: set AVATAR_API_URL and AVATAR_API_TOKEN in .env to enable it",
               file=sys.stderr)
     return config
+
+
+def _env_seconds(name: str, default: float, floor: float) -> float:
+    """A number of seconds from the environment; a typo falls back to the default, and the floor stops
+    a tiny value from hammering the (billed, rate-limited) cloud."""
+    try:
+        return max(floor, float(os.environ.get(name, default)))
+    except ValueError:
+        return default
 
 
 def _make_feed(monitor: Monitor, config: AvatarConfig | None) -> AvatarFeed | None:
@@ -142,7 +164,12 @@ def main() -> None:
     if researcher:
         researcher.start()  # also researches memos left over from the last session
 
-    api = Api(monitor, feed, notes, researcher)
+    watch = WatchSession(
+        (lambda topics: fetch_watch(config, topics)) if config else None,
+        recap=(lambda items, minutes: fetch_recap(config, items, minutes)) if config else None,
+        refresh_sec=_env_seconds("WATCH_REFRESH_SEC", 180.0, floor=30.0),
+    )
+    api = Api(monitor, feed, notes, researcher, watch)
     api._window = webview.create_window(
         "goo-gaa",
         str(WEB_DIR / "index.html"),

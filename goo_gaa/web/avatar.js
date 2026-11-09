@@ -8,8 +8,9 @@
  *                        {
  *                          social_seconds: number,
  *                          total_seconds:  number,
- *                          avatar: null | {            // null until the cloud has answered, or when
- *                            mood:    "happy" | "uneasy" | "grumpy" | "angry",   // not configured
+ *                          avatar: null | {            // null until the cloud has answered, or when not configured
+ *                            mood:    "happy" | "uneasy" | "grumpy" | "angry" | "watching",
+ *                                     // ("watching" = browsing SNS for the user; set by the page)
  *                            message: string,          // what the avatar says (Gemini, or a fixed
  *                            action:  string,          //   fallback line); action = one small step
  *                            source:  "gemini" | "fallback"

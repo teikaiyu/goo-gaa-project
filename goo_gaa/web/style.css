@@ -56,9 +56,8 @@ html, body {
 /* The avatar's words: short (the server asks Gemini for <= 40 chars) so two lines is enough. */
 .speech { text-align: center; font-size: 13px; line-height: 1.35; max-width: 100%; }
 
-/* The speech line is only two lines tall; keep the layout from jumping. */
-.speech { font-size: 12px; max-height: 3.4em; overflow: hidden; }
-body.watching .speech { display: none; }  /* while watching, the report below is the avatar's voice */
+/* The speech line holds a mood line, a watch report or a recap: up to ~4 lines. */
+.speech { font-size: 12px; max-height: 5.2em; overflow: hidden; }
 
 /* ---- views: one visible at a time (card[data-view]) ---- */
 .view { display: none; width: 100%; flex: 1; min-height: 0; flex-direction: column; gap: 6px; }
@@ -95,7 +94,7 @@ textarea:focus-visible { outline: 2px solid var(--text-dim); }
   background: transparent; color: var(--text-dim); cursor: pointer; opacity: 0;
 }
 .note:hover .note-del, .note-del:focus-visible { opacity: 1; }
-.watch-status { text-align: center; font-size: 12px; }
+.brief-head { padding: 6px 0 2px; }
 
 .time-line { font-size: 10px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 
