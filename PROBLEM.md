@@ -244,6 +244,17 @@ SNS のドゥームスクロールで時間を受動的に消費してしまう�
   | 4. ネイティブ iOS アプリ + Cloud Run（ハッカソン後の最終形の候補） | — | App Store / TestFlight 経由のアプリ（Apple Developer 登録が要る） |
   - Cloud Run の役割は最初から「頭脳と配信」（Gemini、`/patrol` のクラウド上のブラウザ、Web アプリと画像の配信、Secret Manager）で、遮る役ではない。どの形でも Cloud Run 側はそのまま使える。
   - **決めること（チーム）**: 1〜3 のどれで締切を迎えるか。拡張機能（`lumo_extension/`）を残すか消すか。
+- **拡張機能以外で遮る方法（2026-11-10 調べ）**: どの方法も、使う人の端末側に 1 回何かを設定してもらう必要がある（URL を開くだけでは不可能）。
+  | 方法 | 遮れる範囲 | 遮ったときの見た目 | Lumo の開始・終了に連動 | 端末側の準備 | 締切までに |
+  | :--- | :--- | :--- | :--- | :--- | :--- |
+  | A. フィルター付き DNS（例: NextDNS） | すべてのブラウザ・アプリ（iPhone のアプリも） | 接続エラー（HTTPS は別画面に差し替えられないので Lumo は出せない） | ◯ サーバーが DNS サービスの API で遮るサイトを出し入れ | DNS 設定（iPhone は構成プロファイル）を 1 回 | △ 外部サービス登録と API 連携。Google 技術ではない。API 仕様・料金は未調査 |
+  | B. Mac のデスクトップアプリ（`goo_gaa` を拡張） | Mac の Chrome・Safari の SNS タブ、Mac の SNS アプリ | Lumo のウィンドウを前に出し、タブを閉じる | ◯ | アプリ導入、オートメーション / アクセシビリティの許可 | △ 署名なしアプリの警告を手で許可 |
+  | C. ネイティブ iOS アプリ（Screen Time API） | iPhone のアプリと Safari | Lumo の画像と文言（Apple の決まった形） | ◯ | 開発中は Xcode から自分の iPhone へ。配布は App Store / TestFlight | △ 自分の iPhone で動かす（デモ動画）は有料の Apple Developer 登録 + Xcode + 実機だけで可（承認不要。無料アカウントは不可）。審査員への配布は Family Controls (Distribution) の承認が要り、間に合わない |
+  | D. iPhone / Mac 標準のスクリーンタイム・集中モード | アプリとサイト | OS 標準の画面 | × ユーザーが手で切り替え | 設定の案内だけ | ◯ 作るものなし |
+  | E. Safari 拡張機能 | Safari | Lumo の画面 | ◯ | 拡張機能（中身はネイティブアプリ） | × Xcode と Apple Developer 登録 |
+  | （今）Chrome 拡張機能 | PC の Chrome | Lumo の画面 | ◯ | 拡張機能を 1 回 | ◯ 実装済み |
+  - Lumo の画面を出して遮れるのは、拡張機能・デスクトップアプリ・ネイティブアプリだけ。iPhone のアプリまで遮れるのは A・C・D だけ。
+  - **当面の方針（2026-11-10）**: Chrome 拡張機能を入れて、Cloud Run の URL で動くか試す。
 
 ### [SPIKE-33] ✅ `/patrol`（Lumo がログインして SNS を見に行く）は SNS の規約に触れる → 廃止して YouTube 公式 API に置き換え
 - **内容**: Instagram の規約は、許可なく自動の手段で情報を集めることを禁じている。Meta は 2024-10 から自動収集についての別の規約
