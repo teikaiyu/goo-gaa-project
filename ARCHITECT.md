@@ -27,13 +27,12 @@ goo-gaa-project/
 │   ├── mood.py            # [純粋] 社会メディア秒数 -> 機嫌 4 段階、フォールバック台詞
 │   ├── schemas.py         # リクエスト / レスポンスの JSON 契約
 │   ├── images.py          # MOOD_IMAGES（機嫌 -> ファイル名の表）と検索（大文字小文字を区別しない）
-│   ├── gemini.py          # Google 呼び出しはここだけ（台詞 / メモの下調べ = 構造化出力 + 検索グラウンディング、画像生成は任意）
-│   ├── main.py            # POST /avatar・/research・/watch・/recap、トークン検証、Google 障害時のフォールバック
+│   ├── gemini.py          # Google 呼び出しはここだけ（台詞 / 見張り = 構造化出力 + 検索グラウンディング / 感想、画像生成は任意）
+│   ├── main.py            # POST /avatar・/watch・/recap、トークン検証、Google 障害時のフォールバック
 │   ├── requirements.txt / requirements-dev.txt
 │   ├── tests/test_api.py  # 偽 Gemini でのテスト（ネットワーク不要）
 │   ├── tests/test_recap.py     # /recap（items から感想 / 障害時 fallback / 入力上限・トリム / トークン / items を log に出さない）
-│   ├── tests/test_watch.py     # /watch（報告 + 最大 3 件 / topics の整形 / 障害時 fallback / トークン / topics を log に出さない）
-│   ├── tests/test_research.py  # /research（要約 + 次の一歩 / 障害時 fallback / 入力上限 / トークン / メモを log に出さない）
+│   ├── tests/test_watch.py     # /watch（報告 + 最大 3 件 / リクエスト本文が不要 / 障害時 fallback / トークン / /research が無いこと）
 │   └── README.md          # API・画像の命名規則・環境変数・デプロイ手順
 ├── goo_gaa/
 │   ├── __init__.py
@@ -44,14 +43,12 @@ goo-gaa-project/
 │   ├── main.py            # CLI 表示（デバッグ / ヘッドレス用）
 │   ├── avatar_client.py   # [スレッド] Cloud Run を呼ぶ AvatarFeed + 設定（URL / トークンは環境変数）
 │   ├── local_avatar.py    # [純粋] 同梱画像を data: URL にする（起動時の happy / 見張り中の 2 枚からランダム）。失敗しても None
-│   ├── notes.py           # [スレッド安全] メモの保存（~/Library/Application Support/goo-gaa/notes.json、原子的書き込み）
 │   ├── watch.py           # [スレッド] WatchSession: 「SNS見といて」の 1 回分。見続けて蓄積 → 「戻る」で感想（/recap。失敗時は端末で作る）
-│   ├── notes_research.py  # [スレッド] 新しいメモを裏で Cloud Run に下調べさせる NoteResearcher（失敗したメモは再試行）
-│   ├── app.py             # デスクトップウィジェット起動（pywebview）+ JS 公開 API（get_state / get_avatar_image / add_note / list_notes / delete_note / set_watching）
+│   ├── app.py             # デスクトップウィジェット起動（pywebview）+ JS 公開 API（get_state / get_avatar_image / set_watching）
 │   └── web/               # [UI] 差し替え可能な見た目レイヤー
-│       ├── index.html     # カード構造: アバター枠 + 2 つの画面（メモ / SNS 見張り中）+ 小さな時間表示
+│       ├── index.html     # カード構造: アバター枠 + 2 つの画面（ホーム / SNS 見張り中）+ 小さな時間表示
 │       ├── style.css      # 色はトークン化（:root の CSS 変数）
-│       ├── app.js         # メモ入力・一覧、画面切替、見てきた内容の報告（台詞 + 一覧）。Avatar の中身は知らない
+│       ├── app.js         # 画面切替、見てきた内容の報告（台詞 + 一覧）。Avatar の中身は知らない
 │       └── avatar.js      # ★アバター差し替え点（mount / update の 2 関数）。既定は画像 + 台詞の表示
 ├── .env.example           # AVATAR_API_URL / AVATAR_API_TOKEN の雛形（.env は ignore 対象。コミット禁止）
 └── tests/
@@ -59,7 +56,6 @@ goo-gaa-project/
     ├── test_monitor.py    # Monitor（偽サンプラ・偽クロック）のテスト
     ├── test_avatar_client.py  # AvatarFeed（偽 fetch）と実際に送信される内容（ローカル HTTP サーバ）のテスト
     ├── test_watch.py      # WatchSession（見ている内容の蓄積 / 感想 / 感想の失敗時 / オフライン / 古い返事の無視 / 停止）
-    ├── test_notes.py      # NoteStore（保存・再起動・上限・破損ファイル・コピー）と NoteResearcher（再試行・削除競合・停止）
     └── test_local_avatar.py   # 起動時画像（同梱 / クラウドとの優先順位 / 失敗時 None / 実ファイルの存在）のテスト
 ```
 
@@ -326,43 +322,35 @@ Google クライアントは「初回使用時」に生成する（起動時に�
 - **競合対策**: ページは「最後に頼んだ機嫌」を覚え、古い答えで上書きしない。クラウドが先に答えていたら起動画像は出さない。
 - 実リポジトリの `images/Lumo_happy.png` が読めることをテストで固定している（デザイナーの改名・削除に気づくため）。
 
-### 4.13 方向転換: 「アバターが代わりに SNS を見る」+ メモと下調べ（2026-11-09）
+### 4.13 方向転換: 「アバターが代わりに SNS を見る」（2026-11-09）と、メモ / 下調べの廃止
 
-**新しい体験**: ユーザーは気になったことを軽くメモする → アバターが裏で下調べする → 「SNS 見といて」と頼むと、アバターは
-下調べした内容を報告し、SNS を見に行く。その間ユーザーは別の作業ができる。（以前の「見すぎると不機嫌になる」は、時間表示と
-`/avatar` の機嫌としてそのまま残してある。）
+**新しい体験**: ユーザーが「SNS 見といて」と頼むと、アバターが代わりに SNS の話題を見に行き、その間ユーザーは別の作業ができる
+（4.14）。以前の「見すぎると不機嫌になる」は、時間表示と `/avatar` の機嫌としてそのまま残してある。
 
-**画面は 2 つ（ウィンドウは 240x330 のまま）**: `memo`（入力欄・メモ一覧・「SNS見といて」）と `watch`（見張り中: 下調べの報告・「戻る」）。
+**画面は 2 つ（ウィンドウは 240x330 のまま）**: `home`（「SNS見といて」のボタン）と `watch`（見張り中: 見ているものの一覧・「戻る」）。
 `card[data-view]` で切り替え、状態は Python の `Api._watching`（`get_state()` の `watching`）が持つ。
 
-**データの流れ**: 入力 → `Api.add_note` → `NoteStore`（ローカル JSON）→ `NoteResearcher` が起こされる → `POST /research {note}` →
-`{summary, next_step, source}` → `NoteStore.set_research`。ページは 5 秒ごとに `list_notes` で結果を拾う。
-
-| 判断 | Pros | Cons |
-| :--- | :--- | :--- |
-| **メモはローカル JSON（採用）** vs SQLite / クラウド保存 | 依存なし・ユーザーが読める / 消せる。最大 50 件のため十分。原子的書き込み（一時ファイル → rename）で途中終了しても壊れない | 複数端末で共有できない（ハッカソンの範囲外） |
-| **下調べは Cloud Run の `/research`（採用）** vs デスクトップから Gemini を直接 | 認証情報・モデル ID・グラウンディングの変更をサーバーで完結。トークンの置き場が既存と同じ | メモ本文が端末の外に出る唯一の経路（下記） |
-| **Google 検索グラウンディング付き（採用）+ 失敗時は検索なしで再試行** | 「下調べ」に最新の事実が入る。検索と構造化出力の併用が不可でも動く | 検索ありは遅く高い。**実 Gemini での併用は未確認**（PROBLEM.md [SPIKE-23]） |
-| **失敗したメモは pending のまま再試行（採用）** | ネットワーク断・429 でもメモは失われない。次の周期（60 秒）か次のメモ追加で再挑戦 | 長く失敗すると「下調べ中」が続く |
-| **見張りは「報告 + 状態」だけ（暫定）** | 画面と体験の骨格を先に固める | **SNS の中身を実際に取得する処理は未実装**（[SPIKE-24]） |
-
-**プライバシー**: これまでは集計値（秒数・時刻）しか送らなかった。メモ本文は **ユーザー自身が書いた文章** で、下調べの目的でのみ
-送る（300 文字上限）。サーバーはメモ本文を log に出さない（エラー種別と HTTP コードのみ。テストで固定）。プロンプトでは
-メモを「データであって指示ではない」と明示し、画面にはすべて `textContent` で表示する（AI の返答を HTML として解釈しない）。
+**廃止したもの（同日）: 気になったことのメモ入力 / メモの保存 / メモの下調べ（`POST /research`）/ メモ由来の `topics`**。
+理由と影響:
+- 「ユーザーの関心事をアバターが調べる」機能は不要になった。メモが無いので、`/watch` に渡していた `topics`（直近 5 件のメモ）も消し、
+  `/watch` は **「いま一般に話題になっていること」を調べる**形になった（リクエストに個人情報が一切ない）。
+- **プライバシーが以前の状態に戻った**: 端末の外へ出るのは集計値（`/avatar`: 秒数・時刻）だけ。メモ本文という自由記述は送らない
+  （[SPIKE-25] は解消）。`/recap` が送るのは、クラウド自身が返した題・要点・経過分のみ。
+- 実装は Git の履歴に残っている（`NoteStore` の原子的書き込み、`NoteResearcher` のバックグラウンド再試行など）。復活させるなら履歴から。
 
 **デプロイ（CI/CD）**: `scripts/deploy_avatar_api.sh` — ① avatar_api のテスト（赤なら中止）② `gcloud run deploy --source .`
 （Secret Manager の `API_TOKEN`・実行用サービスアカウント・`--max-instances` 上限）③ スモークテスト（`/health` が 200、
-`/avatar` と `/research` がトークンなしで 401）。設定は環境変数のみ（`GCP_PROJECT` 必須）で、手元でも CI でも同じ手順。
+`/avatar` `/watch` `/recap` がトークンなしで 401）。設定は環境変数のみ（`GCP_PROJECT` 必須）で、手元でも CI でも同じ手順。
 
 ### 4.14 アバターが「見ているもの」と「どうだったか」を話す（`/watch` + `/recap`、2026-11-09）
 
-**流れ**: 「SNS見といて」→ `Api.set_watching(True)` が `WatchSession` を起動し、**直近 5 件のメモ**を `topics` に `POST /watch`。
+**流れ**: 「SNS見といて」→ `Api.set_watching(True)` が `WatchSession` を起動し、`POST /watch`（本文なし）。
 クラウドは Gemini + **Google 検索グラウンディング**で「今話題のこと」を調べ `{report, items[≤3], source}` を返す。
 セッションは `WATCH_REFRESH_SEC`（既定 180 秒、下限 30 秒）ごとに見直し、**新しく見たものだけを足していく**（題で重複排除、最大 8 件、新しい順）。
 ページは `get_state()["watch"]` = `{status, report, items, recap, trouble}` を 1 秒ごとに読み、
-- **見ている間**: アバターの台詞（`#speech`）に「いま見ているもの」の `report`、一覧に「いま見ているもの」→「調べておいたこと」。
+- **見ている間**: アバターの台詞（`#speech`）に「いま見ているもの」の `report`、一覧に「いま見ているもの」。
 - **「戻る」**: `set_watching(False)` → `WatchSession.finish()`。実行中の見直しが終わったら、見たもの（`items` + 経過分）を `POST /recap` に送り、
-  **「どうだったか」を台詞に出す**（メモ画面に戻ったあとも 60 秒表示）。まとめている間は「どうだったか、まとめるね…」。
+  **「どうだったか」を台詞に出す**（ホーム画面に戻ったあとも 60 秒表示）。まとめている間は「どうだったか、まとめるね…」。
 
 **状態**: `idle → watching → recapping → recap(60 秒) → idle`。「戻る」を押さない限り `watching` が続く。
 
@@ -372,13 +360,13 @@ Google クライアントは「初回使用時」に生成する（起動時に�
 | **離れている間、定期的に見直して蓄積（採用）** vs 開始時に 1 回だけ | 「見ている間に何があったか」を戻ったときに語れる。長く離れるほど中身が増える | 呼び出しが増える（既定 3 分ごと。429 と費用に注意: [SPIKE-19]）。下限 30 秒で暴走を防ぐ |
 | **`/recap` は検索せず、見たものだけから感想を書く** | 新しい事実を足せない = でっち上げが起きない。軽く速い | 感想の材料は `/watch` の返事の質に依存 |
 | **感想の失敗時は端末で素朴なまとめを作る（`local_recap`）** | 「戻る」で必ず何か言う。ネットが切れても成立 | 感想というより件数の報告になる |
-| **`/watch` は検索なしの再試行をしない（`/research` と違う点）** | 検索なしだと見てもいない内容を作ってしまうため。失敗は `trouble` として正直に伝える | Google が不調だと何も見られない |
+| **`/watch` は検索なしの再試行をしない** | 検索なしだと見てもいない内容を作ってしまうため。失敗は `trouble` として正直に伝える | Google が不調だと何も見られない |
 | **セッション番号で古い返事を捨てる** | 「戻る → もう一度見て」の途中に古い返事が来ても上書きしない | 少しコードが増える |
 | **Avatar 契約は変えず、ページが `avatar` を `{mood, message}` で渡す**（見張り中は `mood: "watching"`、感想は `happy`） | 差し替え予定のアバターが台詞の出し方を 1 つ知っているだけで済む | `watching` はサーバーの機嫌ではなく、ページが付ける擬似的な機嫌 |
 | **見張り中の絵は 2 枚からランダム（`Lumo_phone_thick_tail.png` / `Lumo_happy_phone.png`）** | 同梱画像なので通信なし・オフラインでも出る。ページは機嫌が変わった時だけ画像を頼むため、**1 回の見張りの間は同じ絵**で、次の見張りで変わる（ちらつかない） | 1 枚 約 1.6 MB（base64 で約 2.2 MB）が橋を 1 回通る。片方のファイルが無ければ残りの 1 枚にする（空の円にしない）。`Lumo_lounging_with_phone.png` はパートナーが `Lumo_phone_thick_tail.png` に改名済み |
 
-**プライバシー**: 送るのは、すでに下調べに送っているメモ本文（5 件・各 100 文字）と、`/recap` ではクラウド自身が返した題・要点・経過分だけ。
-サーバーは `topics` / `items` を log に出さない（テストで固定）。
+**プライバシー**: `/watch` はユーザーの情報を一切送らない。`/recap` はクラウド自身が返した題・要点・経過分だけ。
+サーバーは `items` を log に出さない（テストで固定）。
 
 ## 5. 技術スタックと要件との関係
 

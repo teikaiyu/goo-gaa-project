@@ -61,18 +61,9 @@ html, body {
 
 /* ---- views: one visible at a time (card[data-view]) ---- */
 .view { display: none; width: 100%; flex: 1; min-height: 0; flex-direction: column; gap: 6px; }
-.card[data-view="memo"] .view-memo,
+.card[data-view="home"] .view-home,
 .card[data-view="watch"] .view-watch { display: flex; }
-
-.note-form { display: flex; gap: 6px; align-items: stretch; }
-textarea {
-  flex: 1; min-width: 0; resize: none; padding: 5px 7px;
-  font: inherit; font-size: 12px; color: var(--text);
-  background: rgba(255, 255, 255, 0.08); border: 1px solid var(--card-border); border-radius: 8px;
-  -webkit-user-select: text; user-select: text; cursor: text;  /* the page is otherwise unselectable */
-}
-textarea::placeholder { color: var(--text-dim); }
-textarea:focus-visible { outline: 2px solid var(--text-dim); }
+.view-home { justify-content: center; }
 
 .btn {
   padding: 6px 10px; font: inherit; font-size: 12px; color: var(--text); cursor: pointer;
@@ -80,20 +71,15 @@ textarea:focus-visible { outline: 2px solid var(--text-dim); }
 }
 .btn:hover { background: rgba(255, 255, 255, 0.18); }
 .btn:focus-visible { outline: 2px solid var(--text-dim); }
-.btn.small { padding: 0 8px; }
-.btn.primary { background: #5b6cff; border-color: transparent; font-weight: 600; }
+.btn.primary { background: #5b6cff; border-color: transparent; font-weight: 600; padding: 9px 10px; }
 .btn.primary:hover { background: #7280ff; }
 
-.note-list { list-style: none; padding: 0; flex: 1; min-height: 0; overflow-y: auto; font-size: 11px; }
-.note { position: relative; padding: 4px 18px 4px 0; border-bottom: 1px solid var(--card-border); }
-.note-text { display: block; line-height: 1.3; word-break: break-word; }
-.note-state, .note-next { display: block; font-size: 10px; color: var(--text-dim); }
-.note-research { display: block; margin-top: 2px; color: var(--text-dim); line-height: 1.3; }
-.note-del {
-  position: absolute; top: 3px; right: 0; width: 16px; height: 16px; border: 0; border-radius: 50%;
-  background: transparent; color: var(--text-dim); cursor: pointer; opacity: 0;
-}
-.note:hover .note-del, .note-del:focus-visible { opacity: 1; }
+/* What the avatar saw: a small scrolling list (title + gist). */
+.seen-list { list-style: none; padding: 0; flex: 1; min-height: 0; overflow-y: auto; font-size: 11px; }
+.seen { padding: 4px 0; border-bottom: 1px solid var(--card-border); }
+.seen-title { display: block; line-height: 1.3; word-break: break-word; }
+.seen-gist { display: block; margin-top: 2px; color: var(--text-dim); line-height: 1.3; }
+.seen-head { display: block; font-size: 10px; color: var(--text-dim); }
 .brief-head { padding: 6px 0 2px; }
 
 .time-line { font-size: 10px; color: var(--text-dim); font-variant-numeric: tabular-nums; }

@@ -77,11 +77,8 @@ gcloud run deploy avatar-api --source . --region asia-northeast1 \
 Then grant the Cloud Run service account the **Vertex AI User** role, and set a budget alert.
 Prefer Secret Manager over `--set-env-vars` for `API_TOKEN` once it works.
 
-## POST /research (memo pre-research)
-Body `{"note": "<=300 chars"}` -> `{summary, next_step, source}`. Uses Gemini with Google Search grounding (`RESEARCH_GROUNDING=0` turns search off). On any Google failure it answers 200 with `source: "fallback"` and empty text, and the desktop app retries later. The memo is never logged. Same bearer token as `/avatar`.
-
 ## POST /watch (what the avatar "saw")
-Body `{"topics": [<=5 short strings, optional]}` -> `{report, items[<=3 {title, gist}], source}`. Gemini + Google Search finds what is being talked about now; the avatar reports it in the first person. Unlike `/research` there is **no retry without search** (that would invent sightings): on any failure it answers 200 with `source: "fallback"`. Topics are never logged.
+No request data is needed (send `{}` or nothing). -> `{report, items[<=3 {title, gist}], source}`. Gemini + Google Search finds what is generally being talked about now; the avatar reports it in the first person. There is **no retry without search** (that would invent sightings): on any failure it answers 200 with `source: "fallback"`.
 
 ## POST /recap ("how was it?")
 Body `{"items": [<=10 {title, gist}], "minutes": 0..1440}` (the items `/watch` gave) -> `{recap, source}`. Written **only** from those items, no search, so nothing can be invented. On failure: 200 with `source: "fallback"` (the desktop app then writes a plain recap itself). Items are never logged.

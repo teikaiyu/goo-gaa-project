@@ -13,8 +13,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from gemini import AvatarGenerator
 from images import images_dir, load_image
 from mood import FALLBACK_LINES, Mood, decide_mood
-from schemas import (AvatarRequest, AvatarResponse, ResearchRequest, ResearchResponse,
-                     RecapRequest, RecapResponse, WatchItem, WatchRequest, WatchResponse)
+from schemas import (AvatarRequest, AvatarResponse, RecapRequest, RecapResponse, WatchItem,
+                     WatchResponse)
 
 app = FastAPI(title="goo-gaa avatar API")
 
@@ -61,18 +61,6 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/research", response_model=ResearchResponse, dependencies=[Depends(check_token)])
-def research(req: ResearchRequest, gen: AvatarGenerator = Depends(get_generator)) -> ResearchResponse:
-    """Pre-research one memo. Google trouble never fails the request: source="fallback" with empty
-    text tells the desktop app "not researched yet", and it asks again later."""
-    try:
-        r = gen.research(req.note)
-        return ResearchResponse(summary=r.summary, next_step=r.next_step, source="gemini")
-    except Exception as e:
-        _warn("research", e)  # error type + HTTP code only: the memo text is never logged
-        return ResearchResponse(summary="", next_step="", source="fallback")
-
-
 @app.post("/recap", response_model=RecapResponse, dependencies=[Depends(check_token)])
 def recap(req: RecapRequest, gen: AvatarGenerator = Depends(get_generator)) -> RecapResponse:
     """"How was it?" after a watch. Written only from the items the client sends back. Google trouble ->
@@ -86,11 +74,11 @@ def recap(req: RecapRequest, gen: AvatarGenerator = Depends(get_generator)) -> R
 
 
 @app.post("/watch", response_model=WatchResponse, dependencies=[Depends(check_token)])
-def watch(req: WatchRequest, gen: AvatarGenerator = Depends(get_generator)) -> WatchResponse:
+def watch(gen: AvatarGenerator = Depends(get_generator)) -> WatchResponse:
     """The avatar 'looks at SNS' and reports what it saw. Google trouble -> source="fallback", empty text
-    (the desktop app then says it could not look). Topics are never logged."""
+    (the desktop app then says it could not look)."""
     try:
-        r = gen.watch(req.topics)
+        r = gen.watch()
         items = [WatchItem(title=i.title, gist=i.gist) for i in r.items[:3]]
         return WatchResponse(report=r.report, items=items, source="gemini")
     except Exception as e:
