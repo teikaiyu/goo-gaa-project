@@ -4,16 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>goo-gaa</title>
+  <!-- Same typeface as the mock. Optional: offline, style.css falls back to a system rounded face. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&amp;display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="card" id="card" data-view="home">
     <button class="close" id="close" aria-label="Quit" title="Quit">&times;</button>
 
+    <!-- Speech bubble: the avatar's words, set by avatar.js. Hidden until the cloud has answered.
+         Sits above the avatar, as in the design mock. -->
+    <p id="speech" class="speech" hidden></p>
     <!-- AVATAR SLOT: the only place the avatar lives. See avatar.js for the contract. -->
     <div id="avatar" class="avatar-slot"></div>
-    <!-- Speech line: the avatar's words, set by avatar.js. Hidden until the cloud has answered. -->
-    <p id="speech" class="speech" hidden></p>
 
     <!-- VIEW 1 (home): hand SNS over to the avatar. -->
     <section class="view view-home" id="view-home">

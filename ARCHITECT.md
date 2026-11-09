@@ -47,7 +47,7 @@ goo-gaa-project/
 │   ├── app.py             # デスクトップウィジェット起動（pywebview）+ JS 公開 API（get_state / get_avatar_image / set_watching）
 │   └── web/               # [UI] 差し替え可能な見た目レイヤー
 │       ├── index.html     # カード構造: アバター枠 + 2 つの画面（ホーム / SNS 見張り中）+ 小さな時間表示
-│       ├── style.css      # 色はトークン化（:root の CSS 変数）
+│       ├── style.css      # 色はトークン化（:root の CSS 変数）。見た目はデザインモック準拠（4.15）
 │       ├── app.js         # 画面切替、見てきた内容の報告（台詞 + 一覧）。Avatar の中身は知らない
 │       └── avatar.js      # ★アバター差し替え点（mount / update の 2 関数）。既定は画像 + 台詞の表示
 ├── .env.example           # AVATAR_API_URL / AVATAR_API_TOKEN の雛形（.env は ignore 対象。コミット禁止）
@@ -341,6 +341,16 @@ Google クライアントは「初回使用時」に生成する（起動時に�
 **デプロイ（CI/CD）**: `scripts/deploy_avatar_api.sh` — ① avatar_api のテスト（赤なら中止）② `gcloud run deploy --source .`
 （Secret Manager の `API_TOKEN`・実行用サービスアカウント・`--max-instances` 上限）③ スモークテスト（`/health` が 200、
 `/avatar` `/watch` `/recap` がトークンなしで 401）。設定は環境変数のみ（`GCP_PROJECT` 必須）で、手元でも CI でも同じ手順。
+
+### 4.15 見た目をデザインモックに合わせる（2026-11-09）
+
+モック「代わりに見てくる モック」（390x844 のスマホ 4 画面）の**視覚言語だけ**を 240x330 のウィジェットに移した。
+タスク / タイマー / 通知の振り分けなど、モックにあって本アプリにまだ無い**機能は作っていない**。
+- 配色: 面 `#F8FAFD`、白い吹き出し、淡い青のチップ `#D3E3FD`、主ボタン `#1967D2`（トークン化）。
+- 吹き出しをアバターの**上**に置く（DOM 順を入れ替え）。ボタンは丸いピル型（主 = 塗り、副 = 枠線）。見た目一覧はチップ化。
+- 書体は M PLUS Rounded 1c（Google Fonts）。オフライン時は macOS の丸ゴシックへフォールバック（外部フォント依存は任意）。
+- Pros: 既存のロジック・テストに触れない CSS / HTML のみの変更。Cons: 暗い背景用だった旧配色は廃止（ダークモード未対応）、
+  フォントの初回読込でネットワークに出る（fonts.googleapis.com）。
 
 ### 4.14 アバターが「見ているもの」と「どうだったか」を話す（`/watch` + `/recap`、2026-11-09）
 
