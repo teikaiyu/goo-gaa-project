@@ -4,31 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>goo-gaa</title>
+  <!-- Same typeface as the mock. Optional: offline, style.css falls back to a system rounded face. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&amp;display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="card" id="card" data-view="memo">
+  <main class="card" id="card" data-view="home">
     <button class="close" id="close" aria-label="Quit" title="Quit">&times;</button>
 
+    <!-- Speech bubble: the avatar's words, set by avatar.js. Hidden until the cloud has answered.
+         Sits above the avatar, as in the design mock. -->
+    <p id="speech" class="speech" hidden></p>
     <!-- AVATAR SLOT: the only place the avatar lives. See avatar.js for the contract. -->
     <div id="avatar" class="avatar-slot"></div>
-    <!-- Speech line: the avatar's words, set by avatar.js. Hidden until the cloud has answered. -->
-    <p id="speech" class="speech" hidden></p>
 
-    <!-- VIEW 1: jot down what caught your eye; the avatar researches it in the background. -->
-    <section class="view view-memo" id="view-memo">
-      <form id="note-form" class="note-form" autocomplete="off">
-        <textarea id="note-input" rows="2" maxlength="300" placeholder="気になったことをメモ…"
-                  aria-label="気になったことをメモ"></textarea>
-        <button type="submit" class="btn small" id="note-add">追加</button>
-      </form>
-      <ul id="note-list" class="note-list" aria-label="メモ"></ul>
+    <!-- VIEW 1 (home): hand SNS over to the avatar. -->
+    <section class="view view-home" id="view-home">
       <button type="button" class="btn primary" id="watch-start">SNS見といて</button>
     </section>
 
     <!-- VIEW 2: the avatar is watching SNS and reports what it saw. -->
     <section class="view view-watch" id="view-watch">
-      <ul id="brief-list" class="note-list brief" aria-label="見たもの"></ul>
+      <ul id="brief-list" class="seen-list" aria-label="見たもの"></ul>
       <button type="button" class="btn" id="watch-stop">戻る</button>
     </section>
 

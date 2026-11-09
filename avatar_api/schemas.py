@@ -18,28 +18,6 @@ class AvatarRequest(BaseModel):
     include_image: bool = True
 
 
-class ResearchRequest(BaseModel):
-    # The user's own short memo ("what caught my eye"). It is the one place free text leaves the
-    # machine, so it is length-capped, and the server never logs it.
-    note: str = Field(min_length=1, max_length=300)
-
-
-class ResearchResponse(BaseModel):
-    summary: str     # background the avatar looked up; "" when source == "fallback"
-    next_step: str   # one small thing to do next
-    source: Literal["gemini", "fallback"]
-
-
-class WatchRequest(BaseModel):
-    # What the user is curious about (their own short memos). Optional: empty = "just see what is going on".
-    topics: list[str] = Field(default_factory=list, max_length=5)
-
-    @field_validator("topics")
-    @classmethod
-    def _cap_each(cls, v: list[str]) -> list[str]:
-        return [t.strip()[:100] for t in v if t.strip()]  # trim + cap, drop blanks
-
-
 class WatchItem(BaseModel):
     title: str   # what it was about (<= 30 chars)
     gist: str    # what people were saying (<= 60 chars)

@@ -57,8 +57,8 @@ URL="$(gcloud run services describe "$SERVICE" --project "$GCP_PROJECT" --region
         --format 'value(status.url)')"
 # /health: public and cheap. (Not /healthz: Cloud Run's front end swallows that path.)
 curl -fsS --max-time 30 "${URL}/health" >/dev/null && echo "health ok"
-# Both endpoints must reject a request without the token (401), proving the lock is on.
-for path in avatar research; do
+# All three endpoints must reject a request without the token (401), proving the lock is on.
+for path in avatar watch recap; do
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -X POST \
             -H 'content-type: application/json' -d '{}' "${URL}/${path}")"
   [[ "$code" == "401" ]] || { echo "FAIL: /${path} answered ${code} without a token (expected 401)" >&2; exit 1; }
