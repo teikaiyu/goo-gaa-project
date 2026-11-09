@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -54,5 +55,36 @@ void main() {
     expect(again.endsAt!.difference(DateTime.now()).inMinutes, 14);
     again.stop();
     expect((await Lumo.load()).endsAt, isNull);
+  });
+
+  test('looks once at the start and keeps the result for the end', () async {
+    var calls = 0;
+    final lumo = await Lumo.load(MockClient((req) async {
+      calls++;
+      return _json({'report': '見てきたよ', 'items': [{'title': 'a', 'gist': 'b'}], 'source': 'gemini'});
+    }));
+    lumo.start();
+    expect(lumo.report, isNull); // not looked yet
+    await lumo.look();
+    await lumo.look(); // already has a result: does not look again
+    expect(calls, 1);
+    expect((await Lumo.load()).report!.items.single.title, 'a'); // survives a reload
+    lumo.stop();
+    expect(lumo.report, isNull);
+  });
+
+  test('a late answer does not leak into the next session', () async {
+    final gate = Completer<void>();
+    final lumo = await Lumo.load(MockClient((req) async {
+      await gate.future;
+      return _json({'report': '古い', 'items': [], 'source': 'gemini'});
+    }));
+    lumo.start();
+    final looking = lumo.look();
+    lumo.stop(); // called back early: nothing found this time
+    lumo.start(); // next session
+    gate.complete();
+    await looking;
+    expect(lumo.report, isNull);
   });
 }

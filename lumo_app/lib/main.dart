@@ -204,17 +204,15 @@ class PatrolPage extends StatefulWidget {
 }
 
 class _PatrolPageState extends State<PatrolPage> {
-  // Lumo starts looking this long before the end, so the report is ready when the user is.
-  static const _lookAhead = Duration(seconds: 90);
   late final DateTime _endsAt = widget.lumo.endsAt ?? DateTime.now();
   late final int _total = widget.lumo.minutes * 60;
   Timer? _tick;
-  Future<Report>? _report;
   bool _done = false;
 
   @override
   void initState() {
     super.initState();
+    widget.lumo.look(); // Lumo goes to look right away; the user just works
     _tick = Timer.periodic(const Duration(seconds: 1), (_) => _update());
     _update();
   }
@@ -231,7 +229,6 @@ class _PatrolPageState extends State<PatrolPage> {
   }
 
   void _update() {
-    if (_left <= _lookAhead) _report ??= widget.lumo.fetchReport();
     if (_left == Duration.zero && !_done) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _finish()); // may run from initState: wait a frame
     }
@@ -242,8 +239,10 @@ class _PatrolPageState extends State<PatrolPage> {
     if (_done || !mounted) return;
     _done = true;
     _tick?.cancel();
+    // Finished looking in time -> what it found. Still looking -> nothing this time (no waiting).
+    final report = widget.lumo.report ?? Report.notFound;
     widget.lumo.stop();
-    _go(context, ReportPage(widget.lumo, _report ??= widget.lumo.fetchReport(), _total));
+    _go(context, ReportPage(widget.lumo, report, _total));
   }
 
   @override
@@ -305,45 +304,33 @@ class _PatrolPageState extends State<PatrolPage> {
 class ReportPage extends StatelessWidget {
   const ReportPage(this.lumo, this.report, this.totalSeconds, {super.key});
   final Lumo lumo;
-  final Future<Report> report;
+  final Report report;
   final int totalSeconds;
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
         backgroundColor: CupertinoColors.systemGroupedBackground,
         child: SafeArea(
-          child: FutureBuilder<Report>(
-            future: report,
-            builder: (context, snap) {
-              final r = snap.data;
-              return ListView(padding: const EdgeInsets.symmetric(vertical: 24), children: [
-                if (r == null) ...[
-                  const LumoSays('Lumo_happy_phone.png', 'いま帰ってくるね…', label: 'スマホを見る Lumo'),
-                  const SizedBox(height: 16),
-                  const CupertinoActivityIndicator(radius: 14),
-                ] else ...[
-                  LumoSays(
-                    r.items.isEmpty ? 'Lumo_calm.png' : 'Lumo_cheering.png',
-                    'えらい！${(totalSeconds / 60).round()}分がんばったね\n${r.text}',
-                    label: 'ほめる Lumo',
-                  ),
-                  if (r.items.isNotEmpty)
-                    CupertinoListSection.insetGrouped(
-                      header: const Text('Lumo が見てきたこと'),
-                      footer: const Text('Gemini が画面を読んでまとめたものです。まちがうこともあります'),
-                      children: [
-                        for (final i in r.items)
-                          CupertinoListTile(title: Text(i.title), subtitle: Text(i.gist, maxLines: 3)),
-                      ],
-                    ),
+          child: ListView(padding: const EdgeInsets.symmetric(vertical: 24), children: [
+            LumoSays(
+              report.items.isEmpty ? 'Lumo_calm.png' : 'Lumo_cheering.png',
+              'えらい！${(totalSeconds / 60).round()}分がんばったね\n${report.text}',
+              label: 'ほめる Lumo',
+            ),
+            if (report.items.isNotEmpty)
+              CupertinoListSection.insetGrouped(
+                header: const Text('Lumo が見てきたこと'),
+                footer: const Text('Gemini が画面を読んでまとめたものです。まちがうこともあります'),
+                children: [
+                  for (final i in report.items)
+                    CupertinoListTile(title: Text(i.title), subtitle: Text(i.gist, maxLines: 3)),
                 ],
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                  child: _primary('次のタスクに進む', () => _go(context, HomePage(lumo))),
-                ),
-              ]);
-            },
-          ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: _primary('次のタスクに進む', () => _go(context, HomePage(lumo))),
+            ),
+          ]),
         ),
       );
 }

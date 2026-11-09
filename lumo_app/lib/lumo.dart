@@ -5,8 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// The apps Lumo can look at for the user (must match PatrolRequest in avatar_api/schemas.py).
-// Trial: Instagram only (X refused the automated login). The API also accepts 'x' and 'youtube'.
-const serviceNames = {'instagram': 'Instagram'};
+const serviceNames = {'instagram': 'Instagram', 'x': 'X', 'youtube': 'YouTube'};
 
 /// "Open it myself" goes to the WEB version: the native app would trigger the Shortcut and bring Lumo back.
 const serviceWebUrls = {
@@ -24,6 +23,14 @@ class Report {
   const Report(this.text, this.items);
   final String text;
   final List<Seen> items;
+
+  /// Shown when Lumo is called back before it finished looking.
+  static const notFound = Report('今回は何も見つからなかったよ', []);
+
+  Map<String, Object> toJson() => {
+        'report': text,
+        'items': [for (final i in items) {'title': i.title, 'gist': i.gist}],
+      };
 
   factory Report.fromJson(Map<String, dynamic> j) => Report(
         j['report'] as String,
@@ -59,8 +66,31 @@ class Lumo {
     return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
   }
 
-  void start() => _p.setInt('endsAt', DateTime.now().add(Duration(minutes: minutes)).millisecondsSinceEpoch);
-  void stop() => _p.remove('endsAt');
+  void start() {
+    _p.remove('report');
+    _p.setInt('session', (_p.getInt('session') ?? 0) + 1); // tells this session from the next one
+    _p.setInt('endsAt', DateTime.now().add(Duration(minutes: minutes)).millisecondsSinceEpoch);
+  }
+
+  void stop() {
+    _p.remove('endsAt');
+    _p.remove('report');
+  }
+
+  /// Lumo looks once, right when the focus session starts, and keeps what it found for the end.
+  Future<void> look() async {
+    final session = _p.getInt('session');
+    if (endsAt == null || _p.getString('report') != null) return;
+    final r = await fetchReport();
+    // Only if it is still the same session: a late answer must not show up in the next one.
+    if (endsAt != null && _p.getInt('session') == session) await _p.setString('report', jsonEncode(r.toJson()));
+  }
+
+  /// What Lumo found, or null if it has not finished looking yet.
+  Report? get report {
+    final j = _p.getString('report');
+    return j == null ? null : Report.fromJson(jsonDecode(j) as Map<String, dynamic>);
+  }
 
   /// What Lumo saw. Really looks first (/patrol: logged-in browser + Gemini Computer Use); if that cannot
   /// work, tells what is being talked about on those apps (/watch: Gemini + Google Search).

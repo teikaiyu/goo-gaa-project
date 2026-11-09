@@ -2,7 +2,7 @@
 
     .venv/bin/python scripts/save_sns_session.py            # writes ~/.lumo/sns-session.json
 
-A real browser window opens. Log in to Instagram yourself (2FA works as usual), then
+A real browser window opens. Log in to Instagram, X and/or YouTube yourself (2FA works as usual), then
 come back here and press Enter. The file holds login cookies: it is a SECRET. It is written outside
 the repo, readable only by you, and goes to Secret Manager (command printed at the end), never to git.
 Use a test account: automated viewing may break the SNS terms, and the account can be suspended.
@@ -23,9 +23,11 @@ with sync_playwright() as pw:
         channel="chrome", headless=False,
         args=["--disable-blink-features=AutomationControlled"], ignore_default_args=["--enable-automation"])
     ctx = browser.new_context(locale="ja-JP")
-    # Instagram only for the trial. Other sites: open a new tab in this window and log in there too.
-    ctx.new_page().goto("https://www.instagram.com/accounts/login/")
-    input("Log in, then press Enter here... ")
+    # One tab per app Lumo can look at (lumo_app/lib/lumo.dart). Skip any you do not use.
+    for url in ("https://www.instagram.com/accounts/login/", "https://x.com/login",
+                "https://accounts.google.com/ServiceLogin?continue=https://www.youtube.com/"):
+        ctx.new_page().goto(url)
+    input("Log in on the tabs you use, then press Enter here... ")
     ctx.storage_state(path=str(out))
     browser.close()
 
