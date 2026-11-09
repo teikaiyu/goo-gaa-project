@@ -5,3 +5,6 @@
 !avatar_api/*.py
 !images/
 !lumo_app/build/web/
+!lumo_extension/*.js
+!lumo_extension/*.json
+!lumo_extension/*.md

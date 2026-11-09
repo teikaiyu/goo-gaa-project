@@ -15,6 +15,18 @@ const serviceWebUrls = {
   'youtube': 'https://www.youtube.com/',
 };
 
+/// Can watched SNS be shielded in this browser? Only the Lumo Chrome extension can do it, so: it is running
+/// (`ready`), it could be installed here (`needsExtension`: Chrome or another Chromium browser on a computer),
+/// or this browser cannot shield at all (`unsupported`: iPhone, Android, Safari, Firefox).
+enum ShieldSupport { ready, needsExtension, unsupported }
+
+ShieldSupport shieldSupport({required bool extension, required bool computer, required String userAgent}) => extension
+    ? ShieldSupport.ready
+    // Chromium browsers say "Chrome/" (Edge too); Chrome on iPhone says "CriOS/", Safari and Firefox neither.
+    : computer && userAgent.contains('Chrome/')
+    ? ShieldSupport.needsExtension
+    : ShieldSupport.unsupported;
+
 /// 90 -> "1時間30分", 25 -> "25分", 60 -> "1時間".
 String minutesLabel(int m) => [if (m >= 60) '${m ~/ 60}時間', if (m % 60 > 0 || m == 0) '${m % 60}分'].join();
 

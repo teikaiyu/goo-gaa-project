@@ -1,6 +1,9 @@
-// Runs on the Lumo app's pages (see manifest.json "matches"). Two jobs:
+// Runs on the Lumo app's pages (see manifest.json "matches"). Three jobs:
+//  0. let the app see that the extension is here (it then stops asking the user to install it);
 //  1. tell the extension about the patrol, read from the app's own storage (shared_preferences keys);
 //  2. pass on the Shield's buttons. Only messages from this very page are accepted.
+document.documentElement.dataset.lumoExtension = chrome.runtime.getManifest().version;
+
 let last = '';
 
 function report() {

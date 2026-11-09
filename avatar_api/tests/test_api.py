@@ -1,5 +1,7 @@
 """No Google, no network: a fake generator stands in for Gemini."""
 import base64
+import io
+import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -179,3 +181,19 @@ def test_token_is_enforced_when_configured(monkeypatch):
 def test_refuses_to_run_open_on_cloud_run(monkeypatch):
     monkeypatch.setenv("K_SERVICE", "avatar-api")  # looks like Cloud Run, but no token set
     assert client(FakeGen()).post("/avatar", json=BODY).status_code == 503
+
+
+def test_extension_zip_is_the_repo_extension_without_tests(monkeypatch):
+    monkeypatch.delenv("EXTENSION_DIR", raising=False)  # the real lumo_extension/ of the repo
+    monkeypatch.setenv("API_TOKEN", "s3cret")  # public even when the API is locked
+    r = client(FakeGen()).get("/lumo_extension.zip")
+    assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert {"lumo_extension/manifest.json", "lumo_extension/background.js", "lumo_extension/bridge.js",
+            "lumo_extension/rules.js"} <= set(names)
+    assert not [n for n in names if "test" in n or n.endswith(".py")]
+
+
+def test_extension_zip_missing_is_404(monkeypatch, tmp_path):
+    monkeypatch.setenv("EXTENSION_DIR", str(tmp_path / "nope"))
+    assert client(FakeGen()).get("/lumo_extension.zip").status_code == 404

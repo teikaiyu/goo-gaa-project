@@ -69,7 +69,8 @@ check() { curl -fsS --max-time 30 -o /dev/null "${URL}$1" || { echo "FAIL: GET $
 check /health                # public and cheap. (Not /healthz: Cloud Run's front end swallows that path.)
 check /                      # the iPhone web app
 check /lumo/Lumo_smile.png   # Lumo's pictures
-echo "health, app and images ok"
+check /lumo_extension.zip    # the Chrome extension the app tells PC users to install
+echo "health, app, images and extension ok"
 # Every Gemini endpoint must reject a request without the token (401), proving the lock is on.
 for path in avatar watch recap patrol; do
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -X POST \

@@ -4,12 +4,15 @@ Run locally:  uvicorn main:app --reload --port 8080
 """
 import base64
 import hmac
+import io
 import os
 import sys
 import time
+import zipfile
 from functools import lru_cache
+from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
 
 from gemini import AvatarGenerator
@@ -61,6 +64,27 @@ def _warn_missing_image(mood: Mood) -> None:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def extension_dir() -> Path:
+    # Read per call, like images_dir(): Cloud Run sets EXTENSION_DIR, locally it is the repo's lumo_extension/.
+    return Path(os.environ.get("EXTENSION_DIR") or Path(__file__).resolve().parent.parent / "lumo_extension")
+
+
+@app.get("/lumo_extension.zip")
+def extension_zip() -> Response:
+    """The Chrome extension as a folder for "Load unpacked" (it is not on the Chrome Web Store). Public: it is
+    the same code as in the repo. Zipped per request, so it always matches the deployed app."""
+    d = extension_dir()
+    if not d.is_dir():
+        raise HTTPException(404, "extension not bundled")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for p in sorted(d.iterdir()):
+            if p.is_file() and p.suffix in (".js", ".json", ".md"):  # what Chrome loads + the README; no tests
+                z.write(p, f"lumo_extension/{p.name}")
+    return Response(buf.getvalue(), media_type="application/zip",
+                    headers={"content-disposition": 'attachment; filename="lumo_extension.zip"'})
 
 
 @app.post("/recap", response_model=RecapResponse, dependencies=[Depends(check_token)])

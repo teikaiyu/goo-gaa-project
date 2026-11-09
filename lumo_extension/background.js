@@ -46,6 +46,13 @@ async function handle(msg, sender) {
   }
 }
 
+// Lumo app tabs opened before the extension was installed (or reloaded) have no working bridge.js,
+// so the patrol would never reach here. Reload them: the app keeps its patrol in localStorage.
+chrome.runtime.onInstalled.addListener(async () => {
+  const urls = chrome.runtime.getManifest().content_scripts[0].matches;
+  for (const tab of await chrome.tabs.query({ url: urls })) chrome.tabs.reload(tab.id);
+});
+
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   const { blocked = {}, allowed = [] } = await get(['blocked', 'allowed']);
   delete blocked[tabId];

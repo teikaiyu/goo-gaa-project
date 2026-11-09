@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:js_interop';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart' show CircularProgressIndicator; // no Cupertino ring with progress
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -147,6 +148,7 @@ class _HomePageState extends State<HomePage> {
                       }),
                     ),
                   ),
+                _shieldStatus(context),
               ],
             ),
             CupertinoListSection.insetGrouped(
@@ -186,11 +188,106 @@ class _HomePageState extends State<HomePage> {
                               if (access != null) lumo.setYouTubeAccess(access.$1, access.$2);
                             }
                             lumo.start();
+                            _toExtension('sync'); // shield from this moment, not from the extension's next check
                             if (context.mounted) _go(context, PatrolPage(lumo));
                           },
                   ),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------- Can this browser shield? (the Lumo extension) ----------
+
+/// The extension marks the app's page when it runs here (lumo_extension/bridge.js). Read on each build: cheap,
+/// and the extension reloads this tab when it is installed, so the answer is never stale.
+ShieldSupport get _shieldSupport => shieldSupport(
+  extension: web.document.documentElement?.hasAttribute('data-lumo-extension') ?? false,
+  computer: const {TargetPlatform.macOS, TargetPlatform.windows, TargetPlatform.linux}.contains(defaultTargetPlatform),
+  userAgent: web.window.navigator.userAgent,
+);
+
+/// A row under the apps to watch: does picking them really shield them here? Honest when it cannot.
+Widget _shieldStatus(BuildContext context) {
+  Icon icon(IconData i, CupertinoDynamicColor c) => Icon(i, color: c.resolveFrom(context));
+  return switch (_shieldSupport) {
+    ShieldSupport.ready => CupertinoListTile(
+      leading: icon(CupertinoIcons.checkmark_shield_fill, CupertinoColors.systemGreen),
+      title: const Text('拡張機能が動いています'),
+      subtitle: const Text('集中中に開くと、Lumo が止めてくれます', maxLines: 2),
+    ),
+    ShieldSupport.needsExtension => CupertinoListTile(
+      leading: icon(CupertinoIcons.exclamationmark_shield_fill, CupertinoColors.systemOrange),
+      title: const Text('SNS を遮るには拡張機能を入れてね', maxLines: 2),
+      subtitle: const Text('入れないと、開いた SNS はそのまま見られます', maxLines: 2),
+      trailing: const CupertinoListTileChevron(),
+      onTap: () => Navigator.of(context).push(CupertinoPageRoute(builder: (_) => const ExtensionGuidePage())),
+    ),
+    ShieldSupport.unsupported => CupertinoListTile(
+      leading: icon(CupertinoIcons.shield_slash, CupertinoColors.systemGrey),
+      title: const Text('この端末では SNS を遮れません', maxLines: 2),
+      subtitle: const Text('遮れるのはパソコンの Chrome だけです。タイマーと報告はここでも使えます', maxLines: 3),
+    ),
+  };
+}
+
+/// How to install the extension. It is not on the Chrome Web Store: the app hands out the folder as a zip.
+class ExtensionGuidePage extends StatelessWidget {
+  const ExtensionGuidePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final number = TextStyle(fontWeight: FontWeight.w600, color: _blue.resolveFrom(context));
+    Widget step(int n, String what, [String? detail]) => CupertinoListTile(
+      leading: Text('$n', style: number),
+      title: Text(what, maxLines: 3),
+      subtitle: detail == null ? null : Text(detail, maxLines: 3),
+    );
+    Widget tip(String what, String detail) =>
+        CupertinoListTile(title: Text(what, maxLines: 2), subtitle: Text(detail, maxLines: 3));
+    return CupertinoPageScaffold(
+      backgroundColor: CupertinoColors.systemGroupedBackground,
+      navigationBar: const CupertinoNavigationBar(middle: Text('拡張機能を入れる')),
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          children: [
+            const LumoSays('Lumo_smile.png', 'パソコンの Chrome に入れると\nSNS を開いたときにボクが出てくるよ', size: 140, label: '手を振る Lumo'),
+            CupertinoListSection.insetGrouped(
+              header: const Text('入れかた（1 回だけ）'),
+              children: [
+                step(1, '下のボタンで lumo_extension.zip をダウンロード'),
+                step(2, 'zip を開いて、lumo_extension フォルダを取り出す', 'Mac はダブルクリック、Windows は右クリック →「すべて展開」'),
+                step(3, 'Chrome のアドレスバーに chrome://extensions と入れて開く', 'このページからは開けないので、入力してね'),
+                step(4, '右上の「デベロッパー モード」をオンにする'),
+                step(5, '「パッケージ化されていない拡張機能を読み込む」を押して、lumo_extension フォルダを選ぶ'),
+                step(6, 'このタブに戻る', 'Lumo が自動で読み込み直して「拡張機能が動いています」と出たら完了'),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: _primary(
+                'lumo_extension.zip をダウンロード',
+                // An <a download> click: saves the file and keeps this page open.
+                () =>
+                    (web.HTMLAnchorElement()
+                          ..href = '/lumo_extension.zip'
+                          ..download = 'lumo_extension.zip')
+                        .click(),
+              ),
+            ),
+            CupertinoListSection.insetGrouped(
+              header: const Text('入れたのに遮られないときは'),
+              children: [
+                tip('シークレット ウィンドウでは動きません', 'ふつうのウィンドウで Lumo と SNS を開いてね'),
+                tip('「始める」の前に、遮りたいアプリのスイッチをオンに', 'オフのアプリは、集中中でも開けます'),
+                tip('前に入れた Lumo があるときは、削除してから入れ直す', 'chrome://extensions の Lumo の「削除」を押してから、手順 5 をやり直してね'),
+              ],
             ),
           ],
         ),
@@ -285,6 +382,7 @@ class _PatrolPageState extends State<PatrolPage> {
     _done = true;
     _tick?.cancel();
     widget.lumo.stop();
+    _toExtension('sync'); // the patrol is over: SNS open normally again
     _go(context, ReportPage(widget.lumo, widget.lumo.fetchReport())); // Lumo comes back from patrol now
   }
 

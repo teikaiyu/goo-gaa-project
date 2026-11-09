@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Lumo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "パトロール中に、Lumo が代わりに見ている SNS を開くと Lumo が出てきます。",
   "permissions": ["storage", "tabs", "webNavigation"],
   "background": { "service_worker": "background.js", "type": "module" },

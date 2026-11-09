@@ -16,6 +16,9 @@ ENV IMAGES_DIR=/app/images
 # The iPhone web app (Flutter). Built locally first: scripts/deploy_avatar_api.sh runs `flutter build web`.
 COPY lumo_app/build/web/ web/
 ENV WEB_DIR=/app/web
+# The Chrome extension, handed out as /lumo_extension.zip (it is not on the Chrome Web Store).
+COPY lumo_extension/ lumo_extension/
+ENV EXTENSION_DIR=/app/lumo_extension
 
 # Least privilege: the web server needs no root. If it were ever compromised, the
 # attacker would not own the container.
