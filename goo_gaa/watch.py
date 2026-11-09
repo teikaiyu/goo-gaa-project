@@ -1,7 +1,7 @@
 """One "watch SNS for me" session: the avatar keeps looking while the user is away, then says how it went.
 
 Life of a session (one background thread):
-  start(topics)  -> looks right away, then again every `refresh_sec`; each look adds NEW things it saw
+  start()        -> looks right away, then again every `refresh_sec`; each look adds NEW things it saw
                     (state()["items"], newest first) and its spoken line (state()["report"]).
   finish()       -> the user pressed "back": after the look in progress, ask the cloud for a recap
                     ("how was it?") built from what was seen, then show it for `recap_show_sec`.
@@ -14,7 +14,7 @@ in flight. A reply is stored only if its number is still current, so a stale ans
 newer session (same idea as `_wanted` in avatar.js).
 
 If the recap call fails, we write a plain recap ourselves from the same items - the user always gets one.
-Privacy: only the user's short memos (topics) and the titles/gists the cloud itself returned go out.
+Privacy: nothing about the user goes out for a watch; for the recap only the titles/gists the cloud itself returned.
 """
 import json
 import sys
@@ -43,8 +43,8 @@ def _post(config: AvatarConfig, path: str, payload: dict) -> dict:
         return json.load(resp)
 
 
-def fetch_watch(config: AvatarConfig, topics: list[str]) -> dict:
-    return _post(config, "/watch", {"topics": topics})
+def fetch_watch(config: AvatarConfig) -> dict:
+    return _post(config, "/watch", {})
 
 
 def fetch_recap(config: AvatarConfig, items: list[dict], minutes: float) -> dict:
@@ -65,7 +65,7 @@ def _idle() -> dict:
 class WatchSession:
     """state(): {status: idle|watching|recapping|recap, report, items[{title,gist}], recap, trouble}"""
 
-    def __init__(self, fetch: Callable[[list[str]], dict] | None,
+    def __init__(self, fetch: Callable[[], dict] | None,
                  recap: Callable[[list[dict], float], dict] | None = None,
                  refresh_sec: float = 180.0, recap_show_sec: float = 60.0,
                  clock: Callable[[], float] = time.monotonic) -> None:
@@ -88,14 +88,14 @@ class WatchSession:
             return {**self._state, "items": [dict(i) for i in self._state["items"]]}
 
     # ---------- control ----------
-    def start(self, topics: list[str]) -> None:
+    def start(self) -> None:
         with self._lock:
             self._gen += 1
             gen = self._gen
             self._finish_evt.set()  # wake an old thread so it sees it is stale and exits
             self._finish_evt = evt = threading.Event()
             self._state = {**_idle(), "status": "watching", "report": STARTING_REPORT}
-        threading.Thread(target=self._run, args=(gen, evt, list(topics), self._clock()),
+        threading.Thread(target=self._run, args=(gen, evt, self._clock()),
                          name="watch", daemon=True).start()
 
     def finish(self) -> None:
@@ -114,12 +114,12 @@ class WatchSession:
             self._state = _idle()
 
     # ---------- the thread ----------
-    def _run(self, gen: int, evt: threading.Event, topics: list[str], t0: float) -> None:
+    def _run(self, gen: int, evt: threading.Event, t0: float) -> None:
         if self._fetch is None:  # offline: nothing to look at, but "back" still gets an answer
             self._update(gen, report=OFFLINE_REPORT, trouble=True)
         else:
             while True:
-                self._look(gen, topics)
+                self._look(gen)
                 if evt.wait(self._refresh_sec):  # returns True the moment finish()/stop()/start() fires
                     break
         with self._lock:
@@ -132,9 +132,9 @@ class WatchSession:
                     return
         self._wrap_up(gen, (self._clock() - t0) / 60)
 
-    def _look(self, gen: int, topics: list[str]) -> None:
+    def _look(self, gen: int) -> None:
         try:
-            reply = self._fetch(topics)
+            reply = self._fetch()
             if reply.get("source") != "gemini" or not reply.get("report"):
                 raise ValueError("server fallback")  # Google had trouble: say so, never make something up
             seen = [{"title": str(i["title"]), "gist": str(i["gist"])} for i in reply.get("items", [])]

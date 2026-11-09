@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show CircularProgressIndicator; // no Cupertino ring with progress
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'lumo.dart';
@@ -20,14 +21,20 @@ Future<void> main() async {
   final Widget first = lumo.endsAt != null
       ? PatrolPage(lumo)
       : serviceNames.containsKey(from)
-          ? InterceptPage(lumo, from!)
-          : HomePage(lumo);
-  runApp(CupertinoApp(
-    title: 'Lumo',
-    debugShowCheckedModeBanner: false,
-    theme: const CupertinoThemeData(primaryColor: _blue, primaryContrastingColor: _onBlue),
-    home: first,
-  ));
+      ? InterceptPage(lumo, from!)
+      : HomePage(lumo);
+  runApp(
+    CupertinoApp(
+      title: 'Lumo',
+      debugShowCheckedModeBanner: false,
+      theme: const CupertinoThemeData(primaryColor: _blue, primaryContrastingColor: _onBlue),
+      // Japanese system labels: the timer wheel's 時間 / 分, the copy & paste menu.
+      locale: const Locale('ja'),
+      supportedLocales: const [Locale('ja')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      home: first,
+    ),
+  );
 }
 
 // ---------- shared pieces ----------
@@ -39,39 +46,45 @@ class LumoSays extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => Column(children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Text(line,
-              textAlign: TextAlign.center,
-              style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(fontSize: 19, fontWeight: FontWeight.w600)),
+  Widget build(BuildContext context) => Column(
+    children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+          borderRadius: BorderRadius.circular(18),
         ),
-        const SizedBox(height: 8),
-        Image.network('/lumo/$image', height: size, semanticLabel: label),
-      ]);
+        child: Text(
+          line,
+          textAlign: TextAlign.center,
+          style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(fontSize: 19, fontWeight: FontWeight.w600),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Image.network('/lumo/$image', height: size, semanticLabel: label),
+    ],
+  );
 }
 
 Widget _primary(String label, VoidCallback? onPressed) => SizedBox(
-      width: double.infinity,
-      child: CupertinoButton.filled(onPressed: onPressed, child: Text(label)),
-    );
+  width: double.infinity,
+  child: CupertinoButton.filled(onPressed: onPressed, child: Text(label)),
+);
 
 Widget _secondary(String label, VoidCallback onPressed) => SizedBox(
-      width: double.infinity,
-      child: CupertinoButton(onPressed: onPressed, child: Text(label)),
-    );
+  width: double.infinity,
+  child: CupertinoButton(onPressed: onPressed, child: Text(label)),
+);
+
+/// 90 -> "1時間30分", 25 -> "25分", 60 -> "1時間".
+String minutesLabel(int m) => [if (m >= 60) '${m ~/ 60}時間', if (m % 60 > 0 || m == 0) '${m % 60}分'].join();
 
 void _go(BuildContext context, Widget page) =>
     Navigator.of(context).pushAndRemoveUntil(CupertinoPageRoute(builder: (_) => page), (_) => false);
 
 /// Leave the choice with the user, without guilt (HIG Agency): the web version, not the native app,
 /// so the Shortcut does not fire again.
-void _openMyself(String service) =>
-    launchUrl(Uri.parse(serviceWebUrls[service]!), webOnlyWindowName: '_self');
+void _openMyself(String service) => launchUrl(Uri.parse(serviceWebUrls[service]!), webOnlyWindowName: '_self');
 
 // ---------- 1. Home ----------
 
@@ -100,63 +113,82 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
       child: SafeArea(
-        child: ListView(padding: const EdgeInsets.symmetric(vertical: 16), children: [
-          const LumoSays('Lumo_smile.png', 'SNSのチェックは任せて！', label: '手を振る Lumo'),
-          CupertinoListSection.insetGrouped(
-            header: const Text('いまやること'),
-            children: [
-              CupertinoTextField.borderless(
-                controller: _task,
-                placeholder: '例：見出しを3つ書く',
-                padding: const EdgeInsets.all(14),
-                onChanged: (v) => lumo.task = v,
-              ),
-            ],
-          ),
-          CupertinoListSection.insetGrouped(
-            header: const Text('Lumo がかわりに見るアプリ'),
-            footer: const Text('集中が終わったら、Lumo が見てきたことを教えてくれます'),
-            children: [
-              for (final s in serviceNames.entries)
-                CupertinoListTile(
-                  title: Text(s.value),
-                  trailing: CupertinoSwitch(
-                    value: lumo.watched.contains(s.key),
-                    onChanged: (on) => setState(() {
-                      final w = lumo.watched;
-                      on ? w.add(s.key) : w.remove(s.key);
-                      lumo.watched = w;
-                    }),
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          children: [
+            const LumoSays('Lumo_smile.png', 'SNSのチェックは任せて！', label: '手を振る Lumo'),
+            CupertinoListSection.insetGrouped(
+              header: const Text('いまやること'),
+              children: [
+                CupertinoTextField.borderless(
+                  controller: _task,
+                  placeholder: '例：見出しを3つ書く',
+                  padding: const EdgeInsets.all(14),
+                  onChanged: (v) => lumo.task = v,
+                ),
+              ],
+            ),
+            CupertinoListSection.insetGrouped(
+              header: const Text('Lumo がかわりに見るアプリ'),
+              footer: const Text('集中が終わったら、Lumo が見てきたことを教えてくれます'),
+              children: [
+                for (final s in serviceNames.entries)
+                  CupertinoListTile(
+                    title: Text(s.value),
+                    trailing: CupertinoSwitch(
+                      value: lumo.watched.contains(s.key),
+                      onChanged: (on) => setState(() {
+                        final w = lumo.watched;
+                        on ? w.add(s.key) : w.remove(s.key);
+                        lumo.watched = w;
+                      }),
+                    ),
+                  ),
+              ],
+            ),
+            CupertinoListSection.insetGrouped(
+              header: const Text('集中する時間'),
+              children: [
+                // The same wheel as the iPhone Clock app's timer (hours + minutes).
+                CupertinoTheme(
+                  // Bigger numbers, close to the Clock app's timer.
+                  data: CupertinoTheme.of(context).copyWith(
+                    textTheme: CupertinoTheme.of(context).textTheme.copyWith(
+                      pickerTextStyle: CupertinoTheme.of(context).textTheme.pickerTextStyle.copyWith(fontSize: 24),
+                    ),
+                  ),
+                  child: SizedBox(
+                    height: 216, // the native picker height
+                    child: CupertinoTimerPicker(
+                      mode: CupertinoTimerPickerMode.hm,
+                      initialTimerDuration: Duration(minutes: lumo.minutes),
+                      onTimerDurationChanged: (d) => setState(() => lumo.minutes = d.inMinutes),
+                    ),
                   ),
                 ),
-            ],
-          ),
-          CupertinoListSection.insetGrouped(
-            header: const Text('集中する時間'),
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: CupertinoSlidingSegmentedControl<int>(
-                  groupValue: lumo.minutes,
-                  children: const {15: Text('15分'), 25: Text('25分'), 50: Text('50分')},
-                  onValueChanged: (m) => setState(() => lumo.minutes = m ?? 25),
-                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              child: Column(
+                children: [
+                  _primary(
+                    '始める',
+                    lumo.watched.isEmpty || lumo.minutes == 0
+                        ? null
+                        : () {
+                            lumo.start();
+                            _go(context, PatrolPage(lumo));
+                          },
+                  ),
+                  _secondary('SNS を開いたときに Lumo を呼ぶ', () {
+                    showCupertinoModalPopup(context: context, builder: (_) => const ShortcutSheet());
+                  }),
+                ],
               ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-            child: Column(children: [
-              _primary('始める', lumo.watched.isEmpty ? null : () {
-                lumo.start();
-                _go(context, PatrolPage(lumo));
-              }),
-              _secondary('SNS を開いたときに Lumo を呼ぶ', () {
-                showCupertinoModalPopup(context: context, builder: (_) => const ShortcutSheet());
-              }),
-            ]),
-          ),
-        ]),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -176,17 +208,19 @@ class InterceptPage extends StatelessWidget {
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Column(children: [
-            const Spacer(),
-            LumoSays('Lumo_happy.png', 'かわりに見てきてあげる！\nそのあいだに$taskてね', size: 240, label: '目を輝かせる Lumo'),
-            const Spacer(),
-            _primary('見てきてもらう（${lumo.minutes}分）', () {
-              lumo.watched = {...lumo.watched, from};
-              lumo.start();
-              _go(context, PatrolPage(lumo));
-            }),
-            _secondary('自分で ${serviceNames[from]} を見る', () => _openMyself(from)),
-          ]),
+          child: Column(
+            children: [
+              const Spacer(),
+              LumoSays('Lumo_happy.png', 'かわりに見てきてあげる！\nそのあいだに$taskてね', size: 240, label: '目を輝かせる Lumo'),
+              const Spacer(),
+              _primary('見てきてもらう（${minutesLabel(lumo.minutes)}）', () {
+                lumo.watched = {...lumo.watched, from};
+                lumo.start();
+                _go(context, PatrolPage(lumo));
+              }),
+              _secondary('自分で ${serviceNames[from]} を見る', () => _openMyself(from)),
+            ],
+          ),
         ),
       ),
     );
@@ -254,45 +288,63 @@ class _PatrolPageState extends State<PatrolPage> {
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Column(children: [
-            const Spacer(),
-            Text('Lumo が $names を見てるよ',
-                textAlign: TextAlign.center, style: CupertinoTheme.of(context).textTheme.navTitleTextStyle),
-            const SizedBox(height: 24),
-            Semantics(
-              label: 'Lumo が戻るまで あと$mmss',
-              child: SizedBox.square(
-                dimension: 280,
-                child: Stack(alignment: Alignment.center, children: [
-                  SizedBox.expand(
-                    child: CircularProgressIndicator(
-                      value: _total == 0 ? 0 : left.inSeconds / _total,
-                      strokeWidth: 10,
-                      strokeCap: StrokeCap.round,
-                      color: _blue.resolveFrom(context),
-                      backgroundColor: CupertinoColors.systemFill.resolveFrom(context),
-                    ),
-                  ),
-                  Column(mainAxisSize: MainAxisSize.min, children: [
-                    Image.network('/lumo/Lumo_happy_phone.png', height: 150, semanticLabel: '楽しそうにスマホを見る Lumo'),
-                    Text(mmss,
-                        style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
-                            fontSize: 34, fontWeight: FontWeight.w600, fontFeatures: const [FontFeature.tabularFigures()])),
-                  ]),
-                ]),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(widget.lumo.task.isEmpty ? 'そのあいだに、やることを進めよう' : 'そのあいだに「${widget.lumo.task}」',
+          child: Column(
+            children: [
+              const Spacer(),
+              Text(
+                'Lumo が $names を見てるよ',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: CupertinoColors.secondaryLabel.resolveFrom(context))),
-            const Spacer(),
-            _primary('完了して Lumo を呼び戻す', _finish),
-            _secondary('自分で見る', () {
-              widget.lumo.stop();
-              _openMyself(widget.lumo.watched.first);
-            }),
-          ]),
+                style: CupertinoTheme.of(context).textTheme.navTitleTextStyle,
+              ),
+              const SizedBox(height: 24),
+              Semantics(
+                label: 'Lumo が戻るまで あと$mmss',
+                child: SizedBox.square(
+                  dimension: 280,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox.expand(
+                        child: CircularProgressIndicator(
+                          value: _total == 0 ? 0 : left.inSeconds / _total,
+                          strokeWidth: 10,
+                          strokeCap: StrokeCap.round,
+                          color: _blue.resolveFrom(context),
+                          backgroundColor: CupertinoColors.systemFill.resolveFrom(context),
+                        ),
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Image.network('/lumo/Lumo_happy_phone.png', height: 150, semanticLabel: '楽しそうにスマホを見る Lumo'),
+                          Text(
+                            mmss,
+                            style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
+                              fontSize: 34,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                widget.lumo.task.isEmpty ? 'そのあいだに、やることを進めよう' : 'そのあいだに「${widget.lumo.task}」',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: CupertinoColors.secondaryLabel.resolveFrom(context)),
+              ),
+              const Spacer(),
+              _primary('完了して Lumo を呼び戻す', _finish),
+              _secondary('自分で見る', () {
+                widget.lumo.stop();
+                _openMyself(widget.lumo.watched.first);
+              }),
+            ],
+          ),
         ),
       ),
     );
@@ -330,9 +382,14 @@ class ReportPage extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
               child: _primary('次のタスクに進む', () => _go(context, HomePage(lumo))),
             ),
-          ]),
-        ),
-      );
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            child: _primary('次のタスクに進む', () => _go(context, HomePage(lumo))),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 // ---------- sheets ----------
@@ -344,9 +401,11 @@ class ShortcutSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return CupertinoActionSheet(
       title: const Text('SNS を開いたときに Lumo を呼ぶ'),
-      message: const Text('「ショートカット」App →「オートメーション」→「＋」→「App」で、'
-          'アプリを選んで「開いている」「すぐに実行」にします。'
-          'アクションは「URLを開く」にして、下でコピーした URL を貼ってください。'),
+      message: const Text(
+        '「ショートカット」App →「オートメーション」→「＋」→「App」で、'
+        'アプリを選んで「開いている」「すぐに実行」にします。'
+        'アクションは「URLを開く」にして、下でコピーした URL を貼ってください。',
+      ),
       actions: [
         for (final s in serviceNames.entries)
           CupertinoActionSheetAction(
@@ -368,27 +427,33 @@ class SettingsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CupertinoPopupSurface(
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              const Text('鍵（API トークン）', style: TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              CupertinoTextField(
-                controller: TextEditingController(text: lumo.token),
-                obscureText: true,
-                autocorrect: false,
-                placeholder: 'チームから受け取った鍵',
-                onChanged: (v) => lumo.token = v,
-              ),
-              const SizedBox(height: 8),
-              Text('この端末の中だけに保存します。',
-                  style: TextStyle(fontSize: 13, color: CupertinoColors.secondaryLabel.resolveFrom(context))),
-              const SizedBox(height: 12),
-              CupertinoButton(onPressed: () => Navigator.pop(context), child: const Text('完了')),
-            ]),
-          ),
+    child: SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('鍵（API トークン）', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            CupertinoTextField(
+              controller: TextEditingController(text: lumo.token),
+              obscureText: true,
+              autocorrect: false,
+              placeholder: 'チームから受け取った鍵',
+              onChanged: (v) => lumo.token = v,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'この端末の中だけに保存します。',
+              style: TextStyle(fontSize: 13, color: CupertinoColors.secondaryLabel.resolveFrom(context)),
+            ),
+            const SizedBox(height: 12),
+            CupertinoButton(onPressed: () => Navigator.pop(context), child: const Text('完了')),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 }

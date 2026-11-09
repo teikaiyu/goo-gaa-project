@@ -23,8 +23,6 @@ from dotenv import load_dotenv
 from goo_gaa.avatar_client import AvatarConfig, AvatarFeed, fetch_avatar
 from goo_gaa.local_avatar import local_image_data_url
 from goo_gaa.monitor import Monitor
-from goo_gaa.notes import NoteStore
-from goo_gaa.notes_research import NoteResearcher, fetch_research
 from goo_gaa.watch import WatchSession, fetch_recap, fetch_watch
 from goo_gaa.watcher_macos import get_snapshot, warm_up
 
@@ -35,13 +33,10 @@ class Api:
     """Everything the page may call. Public methods here == the JS-visible surface."""
 
     def __init__(self, monitor: Monitor, feed: AvatarFeed | None = None,
-                 notes: NoteStore | None = None, researcher: NoteResearcher | None = None,
                  watch: WatchSession | None = None) -> None:
         self._monitor = monitor  # leading underscore: not exposed to JS
         self._watch = watch or WatchSession(None)  # None fetch = offline: reports that it could not look
         self._feed = feed
-        self._notes = notes or NoteStore()
-        self._researcher = researcher
         self._watching = False
         self._window: webview.Window | None = None
 
@@ -54,32 +49,16 @@ class Api:
         state["watch"] = self._watch.state()  # {status, report, items}: what the avatar saw
         return state
 
-    # ---------- memos ----------
-    def list_notes(self) -> list[dict]:
-        """Newest first: {id, text, created_at, research: None | {summary, next_step}}."""
-        return self._notes.all()
-
-    def add_note(self, text: str) -> dict | None:
-        """Save a memo and let the avatar start researching it. None = blank text, nothing saved."""
-        note = self._notes.add(text)
-        if note and self._researcher:
-            self._researcher.wake()
-        return note
-
-    def delete_note(self, note_id: str) -> None:
-        self._notes.delete(note_id)
-
     # ---------- "watch SNS for me" ----------
     def set_watching(self, on: bool) -> bool:
         """The user hands SNS over to the avatar (True) or takes it back (False).
 
-        Handing over starts a WatchSession: the cloud looks at what is being talked about (guided by the
-        user's memos), keeps looking while the user is away, and get_state()["watch"] carries what it saw.
+        Handing over starts a WatchSession: the cloud looks at what is being talked about, keeps looking
+        while the user is away, and get_state()["watch"] carries what it saw.
         Taking it back makes the avatar tell how it went (the "recap" in get_state()["watch"])."""
         self._watching = bool(on)
         if self._watching:
-            topics = [n["text"] for n in self._notes.all()[:5]]  # newest 5 memos
-            self._watch.start(topics)
+            self._watch.start()
         else:
             self._watch.finish()  # "back": the avatar now tells how it went (shown via get_state()["watch"])
         return self._watching
@@ -130,12 +109,6 @@ def _make_feed(monitor: Monitor, config: AvatarConfig | None) -> AvatarFeed | No
     )
 
 
-def _make_researcher(notes: NoteStore, config: AvatarConfig | None) -> NoteResearcher | None:
-    if config is None:
-        return None  # memos still work offline; they just stay "not researched yet"
-    return NoteResearcher(notes, fetch=lambda text: fetch_research(config, text))
-
-
 def _exit_now(code: int = 0) -> None:
     """Leave the process right away, after our own cleanup has finished.
 
@@ -159,17 +132,13 @@ def main() -> None:
     feed = _make_feed(monitor, config)
     if feed:
         feed.start()
-    notes = NoteStore()
-    researcher = _make_researcher(notes, config)
-    if researcher:
-        researcher.start()  # also researches memos left over from the last session
 
     watch = WatchSession(
-        (lambda topics: fetch_watch(config, topics)) if config else None,
+        (lambda: fetch_watch(config)) if config else None,
         recap=(lambda items, minutes: fetch_recap(config, items, minutes)) if config else None,
         refresh_sec=_env_seconds("WATCH_REFRESH_SEC", 180.0, floor=30.0),
     )
-    api = Api(monitor, feed, notes, researcher, watch)
+    api = Api(monitor, feed, watch)
     api._window = webview.create_window(
         "goo-gaa",
         str(WEB_DIR / "index.html"),
@@ -189,8 +158,6 @@ def main() -> None:
         traceback.print_exc()
         code = 1
     finally:
-        if researcher:
-            researcher.stop()
         if feed:
             feed.stop()
         monitor.stop()      # always stop the threads, even on error (Graceful Shutdown)
