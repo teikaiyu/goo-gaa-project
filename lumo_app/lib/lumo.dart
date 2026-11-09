@@ -98,9 +98,7 @@ class Lumo {
     final services = watched.toList();
     final patrol = await _post('/patrol', {'services': services});
     if (patrol?['source'] == 'gemini') return Report.fromJson(patrol!);
-    final watch = await _post('/watch', {
-      'topics': [for (final s in services) '${serviceNames[s]} で話題になっていること'],
-    });
+    final watch = await _post('/watch', {}); // what is being talked about on SNS (no login needed)
     if (watch?['source'] == 'gemini') return Report.fromJson(watch!);
     return Report(
       _unauthorized ? '設定で「鍵」を入れてね。そしたら見てこられるよ' : 'ごめん、今日はうまく見られなかった…',
