@@ -189,8 +189,7 @@ def test_extension_zip_is_the_repo_extension_without_tests(monkeypatch):
     r = client(FakeGen()).get("/lumo_extension.zip")
     assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
     names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
-    assert {"lumo_extension/manifest.json", "lumo_extension/background.js", "lumo_extension/bridge.js",
-            "lumo_extension/rules.js"} <= set(names)
+    assert {"manifest.json", "background.js", "bridge.js", "rules.js"} <= set(names)  # at the top, not in a folder
     assert not [n for n in names if "test" in n or n.endswith(".py")]
 
 

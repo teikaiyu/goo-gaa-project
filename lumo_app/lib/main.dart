@@ -265,7 +265,11 @@ class ExtensionGuidePage extends StatelessWidget {
                 step(2, 'zip を開いて、lumo_extension フォルダを取り出す', 'Mac はダブルクリック、Windows は右クリック →「すべて展開」'),
                 step(3, 'Chrome のアドレスバーに chrome://extensions と入れて開く', 'このページからは開けないので、入力してね'),
                 step(4, '右上の「デベロッパー モード」をオンにする'),
-                step(5, '「パッケージ化されていない拡張機能を読み込む」を押して、lumo_extension フォルダを選ぶ'),
+                step(
+                  5,
+                  '「パッケージ化されていない拡張機能を読み込む」を押して、lumo_extension フォルダを選ぶ',
+                  'manifest.json が入っているフォルダです。使っているあいだは消さないでね',
+                ),
                 step(6, 'このタブに戻る', 'Lumo が自動で読み込み直して「拡張機能が動いています」と出たら完了'),
               ],
             ),

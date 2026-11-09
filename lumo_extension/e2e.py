@@ -4,8 +4,8 @@
                                                -> "開く" lets that tab through
           -> finish -> youtube.com opens normally
 
-Also checks: without the extension, home asks for it and its guide downloads lumo_extension.zip; with it, the app
-sees it (home says so), the extension finds open Lumo tabs (it reloads them when installed), and an app the user
+Also checks: without the extension, home asks for it and its guide downloads lumo_extension.zip; with it (loaded
+from that very zip), the app sees it (home says so), the extension finds open Lumo tabs (it reloads them when installed), and an app the user
 did not pick (Instagram) is left alone.
 
 No real SNS and no Google sign-in: youtube.com / instagram.com answer with a stub page, and Google's sign-in
@@ -95,25 +95,28 @@ def chromium(pw, *args):
                                                  locale="ja-JP", viewport={"width": 390, "height": 844}, args=args)
 
 
-def without_extension(pw):
-    """A Chrome without Lumo: home asks for the extension, and its guide hands out the zip."""
+def without_extension(pw) -> Path:
+    """A Chrome without Lumo: home asks for the extension, and its guide hands out the zip. -> the unzipped folder."""
     ctx = chromium(pw)
     app = ctx.new_page()
     app.goto(APP)
     accessible(app).get_by_role("button", name=re.compile("拡張機能を入れてね")).click()
     with app.expect_download(timeout=15000) as dl:
         app.get_by_role("button", name="lumo_extension.zip をダウンロード").click()
+    folder = Path(tempfile.mkdtemp()) / "lumo_extension"
     with zipfile.ZipFile(dl.value.path()) as z:
-        check("without it, home leads to a guide that downloads the extension",
-              dl.value.suggested_filename == "lumo_extension.zip" and "lumo_extension/manifest.json" in z.namelist())
+        z.extractall(folder)
+    check("without it, home leads to a guide that downloads the extension",
+          dl.value.suggested_filename == "lumo_extension.zip" and (folder / "manifest.json").is_file())
     ctx.close()
+    return folder
 
 
 def main():
     version = json.loads((EXT / "manifest.json").read_text())["version"]
     with server(), sync_playwright() as pw:
-        without_extension(pw)
-        ctx = chromium(pw, f"--disable-extensions-except={EXT}", f"--load-extension={EXT}")
+        ext = without_extension(pw)  # the rest runs on what users download, not on this repo folder
+        ctx = chromium(pw, f"--disable-extensions-except={ext}", f"--load-extension={ext}")
         ctx.route(SNS, lambda r: r.fulfill(content_type="text/html", body="<title>SNS (stub)</title>"))
         ctx.route("https://accounts.google.com/gsi/client*",
                   lambda r: r.fulfill(content_type="text/javascript", body=GOOGLE_SAYS_NO))

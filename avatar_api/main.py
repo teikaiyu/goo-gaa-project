@@ -82,7 +82,9 @@ def extension_zip() -> Response:
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for p in sorted(d.iterdir()):
             if p.is_file() and p.suffix in (".js", ".json", ".md"):  # what Chrome loads + the README; no tests
-                z.write(p, f"lumo_extension/{p.name}")
+                # Files at the top: macOS and Windows then both unzip into ONE folder named lumo_extension
+                # (a top folder inside the zip ends up nested on Windows, and that outer folder fails to load).
+                z.write(p, p.name)
     return Response(buf.getvalue(), media_type="application/zip",
                     headers={"content-disposition": 'attachment; filename="lumo_extension.zip"'})
 
