@@ -18,7 +18,7 @@
 |---|---|
 | 準備 | 「いまやること」を書き、集中をじゃまするアプリ（Instagram / X / YouTube）を登録し、集中する時間を iPhone の時計アプリと同じホイールで選ぶ |
 | 集中中 | 円形タイマーの中で、Lumo が楽しそうにスマホを見ている |
-| SNS を開きかけたとき | 登録したサイトのタブが Lumo の画面に切り替わる。**やっぱやめとく** でタブを閉じ、**開く** でそのタブだけ通す（Chrome 拡張機能） |
+| SNS を開きかけたとき | 登録したサイトのタブが Lumo の画面に切り替わる。**やっぱやめとく** でタブを閉じ、**開く** でそのタブだけ通す（Chrome 拡張機能。入っていなければホームが入れ方へ案内し、入れられない端末ではそう伝える） |
 | 集中が終わったとき | Lumo が実際に集中した時間をほめ、きみの **YouTube の登録チャンネルの新着** から好みに合うものを選んで、Lumo の口調で紹介する。ほかのアプリは「ボクがしっかり見張ってたよ」と報告する |
 
 ### 規約とプライバシー
@@ -62,7 +62,7 @@
 |---|---|
 | `lumo_app/` | Flutter の Web アプリ（`lib/main.dart` 画面、`lib/lumo.dart` セッションと YouTube と API、`lib/google_auth.dart` YouTube の許可） |
 | `avatar_api/` | Cloud Run の API（`/patrol`、ほかにデスクトップ版用の `/avatar` `/watch` `/recap`） |
-| `lumo_extension/` | Chrome 拡張機能（パトロール中に SNS のタブを遮る） |
+| `lumo_extension/` | Chrome 拡張機能（パトロール中に SNS のタブを遮る）。アプリが `/lumo_extension.zip` で配る。通しのテスト `e2e.py` |
 | `images/` | Lumo の画像（サーバーが `/lumo/` で配る） |
 | `goo_gaa/` | 最初に作った macOS のデスクトップ版（SNS の利用時間で Lumo の機嫌が変わる）。今回の Web 版とは別 |
 | `scripts/` | デプロイ（`deploy_avatar_api.sh`）、CI/CD の初期設定（`setup_cicd.sh`） |
@@ -77,9 +77,13 @@
 4. 時間が来るか **完了して Lumo を呼び戻す** を押すと、Lumo が報告してくれる。
 
 **SNS を遮る機能を使う（パソコンの Chrome）**
-1. Chrome で `chrome://extensions` を開き、右上の **デベロッパー モード** をオンにする。
-2. **パッケージ化されていない拡張機能を読み込む** で `lumo_extension` フォルダを選ぶ。
-3. Lumo で **始める** を押してから、別のタブで instagram.com などを開くと Lumo が出てくる。
+1. パソコンの Chrome で Lumo を開く。ホームの「集中をじゃまするアプリ」の下に **SNS を遮るには拡張機能を入れてね** と出るので押す。
+2. 画面の手順どおりに入れる（**lumo_extension.zip をダウンロード** → 取り出す → `chrome://extensions` →
+   **デベロッパー モード** をオン → **パッケージ化されていない拡張機能を読み込む** で `lumo_extension` フォルダを選ぶ）。
+3. Lumo のタブに戻ると自動で読み込み直され、**拡張機能が動いています** と出る。
+4. **始める** を押してから、別のタブで youtube.com などを開くと Lumo が出てくる。
+- iPhone・Android・Safari では、ホームに **この端末では SNS を遮れません** と出る（タイマーと報告は使える）。
+- 遮られないときの確かめ方（シークレット ウィンドウ、古い版など）は `lumo_extension/README.md`。
 
 ### 手元で動かす
 必要なもの: Flutter 3.47 / Python 3.12 以上 / `gcloud`（Gemini を呼ぶ場合）
@@ -102,6 +106,7 @@ GOOGLE_CLOUD_PROJECT=<プロジェクト ID> WEB_DIR=../lumo_app/build/web \
 (cd avatar_api && ../.venv/bin/python -m pytest -q)      # API
 (cd lumo_app && flutter analyze && flutter test)          # アプリ
 node --test lumo_extension/rules.test.mjs                 # 拡張機能
+.venv/bin/python lumo_extension/e2e.py                    # 通し（アプリ + 拡張機能、Playwright。準備は lumo_extension/README.md）
 ```
 
 ### デプロイ
@@ -111,6 +116,8 @@ node --test lumo_extension/rules.test.mjs                 # 拡張機能
 
 ### 今の限界
 - 遮れるのはパソコンの Chrome の Web 版 SNS だけ。iPhone のアプリと Safari を遮るには、ネイティブ iOS アプリ（Screen Time API）が必要（`PROBLEM.md` SPIKE-32）。
+  アプリは、遮れない環境ではそのことをホームに表示する。
+- 拡張機能は Chrome ウェブストアに公開していない。アプリが zip で配り、「パッケージ化されていない拡張機能」として入れてもらう。
 - YouTube の OAuth 同意画面が「テスト中」のあいだは、テストユーザーに追加した Google アカウントだけが YouTube を許可できる。
 
 ## Resources
@@ -137,5 +144,8 @@ node --test lumo_extension/rules.test.mjs                 # 拡張機能
   - 調査と比較: iOS で作れる形（ネイティブ / Web）、SNS の規約、YouTube Data API や Screen Time API の制約。チームの判断材料を短時間で集めるため。
   - 実装: Flutter の画面、`/patrol`、Chrome 拡張機能、デプロイと CI/CD のスクリプト、テスト。締切までに動くものを作るため。
   - レビュー: デプロイスクリプトの不具合（失敗しても止まらない確認など）の発見、`main` との衝突の解消。
+  - 拡張機能版の仕上げ（2026-11-10、非対話モードで実行し、判断の根拠を `docs/agent-runs/feat-lumo-extension.md` に記録）:
+    拡張機能があるかの検知、入れ方の画面と zip の配布、Playwright での通しのテスト。
+    なぜ AI か: 「入れたのに遮られない」原因の洗い出しと、ブラウザを何度も起動して確かめる作業を、締切前に人の手を使わずに回すため。
 - コンセプト、画面のモック、キャラクター、どの案を採るかは、チームが決めた。
 - Lumo のキャラクター画像は、アバター担当が画像生成 AI で作成した（ツール名と利用条件は著作物利用シートに記載）。
