@@ -361,24 +361,26 @@ class ReportPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
-    backgroundColor: CupertinoColors.systemGroupedBackground,
-    child: SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        children: [
-          LumoSays(
-            report.items.isEmpty ? 'Lumo_calm.png' : 'Lumo_cheering.png',
-            'えらい！${minutesLabel((totalSeconds / 60).round())}がんばったね\n${report.text}',
-            label: 'ほめる Lumo',
-          ),
-          if (report.items.isNotEmpty)
-            CupertinoListSection.insetGrouped(
-              header: const Text('Lumo が見てきたこと'),
-              footer: const Text('Gemini が画面を読んでまとめたものです。まちがうこともあります'),
-              children: [
-                for (final i in report.items)
-                  CupertinoListTile(title: Text(i.title), subtitle: Text(i.gist, maxLines: 3)),
-              ],
+        backgroundColor: CupertinoColors.systemGroupedBackground,
+        child: SafeArea(
+          child: ListView(padding: const EdgeInsets.symmetric(vertical: 24), children: [
+            LumoSays(
+              report.items.isEmpty ? 'Lumo_disappointed.png' : 'Lumo_cheering.png',
+              'えらい！${(totalSeconds / 60).round()}分がんばったね\n${report.text}',
+              label: 'ほめる Lumo',
+            ),
+            if (report.items.isNotEmpty)
+              CupertinoListSection.insetGrouped(
+                header: const Text('Lumo が見てきたこと'),
+                footer: const Text('Gemini が画面を読んでまとめたものです。まちがうこともあります'),
+                children: [
+                  for (final i in report.items)
+                    CupertinoListTile(title: Text(i.title), subtitle: Text(i.gist, maxLines: 3)),
+                ],
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: _primary('次のタスクに進む', () => _go(context, HomePage(lumo))),
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
