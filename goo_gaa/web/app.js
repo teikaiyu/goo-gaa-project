@@ -7,7 +7,6 @@ const noteForm = document.getElementById('note-form');
 const noteInput = document.getElementById('note-input');
 const noteList = document.getElementById('note-list');
 const briefList = document.getElementById('brief-list');
-const watchStatus = document.getElementById('watch-status');
 
 const api = () => window.pywebview.api;
 
@@ -49,17 +48,24 @@ function renderNotes(notes) {
   }
 }
 
-// What the avatar tells when it takes over SNS: the prepared research, memo by memo.
-function renderBriefing(notes) {
+// The watch view lists what the avatar SAW (watch.items), then what it had prepared (memo research).
+let lastBriefKey = '';
+function renderBriefing(watch) {
+  const prepared = notes.filter((n) => n.research);
+  const key = JSON.stringify([watch.items, prepared.map((n) => n.id)]);
+  if (key === lastBriefKey) return;  // unchanged: do not rebuild (it would reset the list's scroll position)
+  lastBriefKey = key;
   briefList.replaceChildren();
-  const done = notes.filter((n) => n.research);
-  if (done.length === 0) {
-    briefList.appendChild(li('note', ['note-text', '下調べしたものはまだないよ']));
-    return;
+  if (watch.items.length > 0) briefList.appendChild(li('brief-head', ['note-state', 'いま見ているもの']));
+  for (const it of watch.items) {
+    briefList.appendChild(li('note', ['note-text', it.title], ['note-research', it.gist]));
   }
-  for (const n of done) {
-    briefList.appendChild(li('note', ['note-text', n.text],
-      ['note-research', n.research.summary], ['note-next', '→ ' + n.research.next_step]));
+  if (prepared.length > 0) {
+    briefList.appendChild(li('brief-head', ['note-state', '調べておいたこと']));
+    for (const n of prepared) {
+      briefList.appendChild(li('note', ['note-text', n.text],
+        ['note-research', n.research.summary], ['note-next', '→ ' + n.research.next_step]));
+    }
   }
 }
 
@@ -68,7 +74,6 @@ async function refreshNotes() {
   try {
     notes = await api().list_notes();
     renderNotes(notes);
-    if (card.dataset.view === 'watch') renderBriefing(notes);
   } catch (e) { /* keep what is shown; the next refresh retries */ }
 }
 
@@ -76,11 +81,16 @@ async function refreshNotes() {
 function setView(view) {
   card.dataset.view = view;
   document.body.classList.toggle('watching', view === 'watch');
-  if (view === 'watch') {
-    renderBriefing(notes);
-    const n = notes.filter((x) => x.research).length;
-    watchStatus.textContent = n > 0 ? `下調べ${n}件、まとめたよ。SNSを見てくるね` : 'SNSを見てくるね';
-  }
+}
+
+// The avatar's own line about the watch, or null when it has nothing to say about it.
+//   watching  -> what it is looking at now (the cloud's spoken line)
+//   recapping -> "summing up..." (after the user pressed back)
+//   recap     -> how it went (shown for a minute, in the memo view too)
+function watchLine(watch) {
+  if (watch.status === 'watching' || watch.status === 'recapping') return watch.report;
+  if (watch.status === 'recap') return watch.recap;
+  return null;
 }
 
 noteForm.addEventListener('submit', async (e) => {
@@ -111,8 +121,16 @@ document.getElementById('watch-stop').addEventListener('click', async () => {
 // ---------- polling ----------
 function render(state) {
   timeEl.textContent = formatHMS(state.social_seconds);
-  // While watching, the avatar is busy with its report: keep the picture, do not replace the speech line.
-  window.Avatar.update(state.watching ? { ...state, avatar: null } : state);
+  const watch = state.watch;
+  if (state.watching) renderBriefing(watch);
+  const line = watchLine(watch);
+  // The avatar talks about the watch through the same speech line it always uses (Avatar contract unchanged).
+  // While it browses SNS it wears the "watching" look (one of two phone pictures, random per session);
+  // for the recap it is happy again.
+  const mood = state.watching ? 'watching' : 'happy';
+  window.Avatar.update(line
+    ? { ...state, avatar: { mood, message: line, action: null, source: 'gemini' } }
+    : state);
 }
 
 async function tick() {

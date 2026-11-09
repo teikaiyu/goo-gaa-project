@@ -94,3 +94,40 @@ def test_shipped_picture_is_used_when_the_avatar_is_not_configured():
 def test_nothing_at_all_for_a_mood_with_no_picture_anywhere():
     assert Api(FakeMonitor(), feed=None).get_avatar_image("angry") is None
     assert Api(FakeMonitor(), FakeFeed({})).get_avatar_image("angry") is None
+
+
+def test_api_serves_the_watching_picture():
+    assert Api(FakeMonitor(), feed=None).get_avatar_image("watching").startswith("data:image/png;base64,")
+
+
+# ---------- the "watching" look: one of two phone pictures, at random ----------
+CHOICES = local_avatar.LOCAL_IMAGE_CHOICES["watching"]
+
+
+def test_watching_picks_one_of_the_two_phone_pictures(tmp_path):
+    for n in CHOICES:
+        (tmp_path / n).write_bytes(PNG_MAGIC + n.encode())
+    seen = {decode(local_image_data_url("watching", images_dir=tmp_path)) for _ in range(60)}
+    assert seen == {PNG_MAGIC + n.encode() for n in CHOICES}  # both appear
+
+
+def test_watching_choice_follows_the_shuffle(tmp_path):
+    (tmp_path / CHOICES[0]).write_bytes(PNG_MAGIC + b"1")
+    (tmp_path / CHOICES[1]).write_bytes(PNG_MAGIC + b"2")
+    assert decode(local_image_data_url("watching", tmp_path, shuffle=lambda names: None)) == PNG_MAGIC + b"1"
+    assert decode(local_image_data_url("watching", tmp_path, shuffle=lambda names: names.reverse())) == PNG_MAGIC + b"2"
+
+
+def test_watching_uses_the_remaining_picture_if_one_file_is_gone(tmp_path):
+    (tmp_path / CHOICES[1]).write_bytes(PNG_MAGIC + b"only")
+    for _ in range(10):  # whichever is picked first, the existing one is found
+        assert decode(local_image_data_url("watching", images_dir=tmp_path)) == PNG_MAGIC + b"only"
+
+
+def test_watching_is_none_when_both_files_are_gone(tmp_path):
+    assert local_image_data_url("watching", images_dir=tmp_path) is None
+
+
+def test_the_repo_really_ships_both_watching_pictures():
+    for n in CHOICES:
+        assert (local_avatar.IMAGES_DIR / n).read_bytes()[:4] == PNG_MAGIC, f"images/{n} is missing"

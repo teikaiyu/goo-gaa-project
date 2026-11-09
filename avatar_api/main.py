@@ -13,7 +13,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from gemini import AvatarGenerator
 from images import images_dir, load_image
 from mood import FALLBACK_LINES, Mood, decide_mood
-from schemas import AvatarRequest, AvatarResponse, ResearchRequest, ResearchResponse
+from schemas import (AvatarRequest, AvatarResponse, ResearchRequest, ResearchResponse,
+                     RecapRequest, RecapResponse, WatchItem, WatchRequest, WatchResponse)
 
 app = FastAPI(title="goo-gaa avatar API")
 
@@ -70,6 +71,31 @@ def research(req: ResearchRequest, gen: AvatarGenerator = Depends(get_generator)
     except Exception as e:
         _warn("research", e)  # error type + HTTP code only: the memo text is never logged
         return ResearchResponse(summary="", next_step="", source="fallback")
+
+
+@app.post("/recap", response_model=RecapResponse, dependencies=[Depends(check_token)])
+def recap(req: RecapRequest, gen: AvatarGenerator = Depends(get_generator)) -> RecapResponse:
+    """"How was it?" after a watch. Written only from the items the client sends back. Google trouble ->
+    source="fallback" (the desktop app then writes a plain summary itself). Items are never logged."""
+    try:
+        r = gen.recap([(i.title, i.gist) for i in req.items], req.minutes)
+        return RecapResponse(recap=r.recap, source="gemini")
+    except Exception as e:
+        _warn("recap", e)
+        return RecapResponse(recap="", source="fallback")
+
+
+@app.post("/watch", response_model=WatchResponse, dependencies=[Depends(check_token)])
+def watch(req: WatchRequest, gen: AvatarGenerator = Depends(get_generator)) -> WatchResponse:
+    """The avatar 'looks at SNS' and reports what it saw. Google trouble -> source="fallback", empty text
+    (the desktop app then says it could not look). Topics are never logged."""
+    try:
+        r = gen.watch(req.topics)
+        items = [WatchItem(title=i.title, gist=i.gist) for i in r.items[:3]]
+        return WatchResponse(report=r.report, items=items, source="gemini")
+    except Exception as e:
+        _warn("watch", e)
+        return WatchResponse(report="", items=[], source="fallback")
 
 
 @app.post("/avatar", response_model=AvatarResponse, dependencies=[Depends(check_token)])
