@@ -255,6 +255,16 @@ SNS のドゥームスクロールで時間を受動的に消費してしまう�
   | （今）Chrome 拡張機能 | PC の Chrome | Lumo の画面 | ◯ | 拡張機能を 1 回 | ◯ 実装済み |
   - Lumo の画面を出して遮れるのは、拡張機能・デスクトップアプリ・ネイティブアプリだけ。iPhone のアプリまで遮れるのは A・C・D だけ。
   - **当面の方針（2026-11-10）**: Chrome 拡張機能を入れて、Cloud Run の URL で動くか試す。
+  - **C（ネイティブ）を自分の iPhone だけで動かす条件（2026-11-10 確認）**:
+    | 項目 | 要るか | 根拠 |
+    | :--- | :--- | :--- |
+    | Apple への申請・承認 | **不要**（要るのは配布用の Family Controls (Distribution) だけ） | Apple の配布用の申請フォームは配布時のもの |
+    | 有料の Apple Developer Program（年 $99） | **必要**。無料の Apple ID（Personal Team）では Family Controls を追加できない | Xcode のエラー「Personal development teams do not support the Family Controls (Development) capability」。Apple DTS の回答「有料チームなら表示される。Personal Team の制限の 1 つ」（Apple Developer Forums thread 852204 / 803362 / 794648） |
+    | 実機の iPhone | **必要**（シミュレーターでは正しく動かない） | — |
+    | 自分の端末用の許可 | `AuthorizationCenter.shared.requestAuthorization(for: .individual)` | — |
+    - Gemini に聞いた回答では「無料の Apple ID でも実機で動かせる」とされたが、上のフォーラムの報告・回答と食い違う。
+      **Xcode を入れたら、まず無料の Apple ID のまま + Capability → Family Controls を追加して、エラーが出るか確かめる**（出れば有料登録が必要で確定）。
+    - フォーラムの回答は 2024〜2026 年のもの。その後 Apple が方針を変えたかは未確認。
 
 ### [SPIKE-33] ✅ `/patrol`（Lumo がログインして SNS を見に行く）は SNS の規約に触れる → 廃止して YouTube 公式 API に置き換え
 - **内容**: Instagram の規約は、許可なく自動の手段で情報を集めることを禁じている。Meta は 2024-10 から自動収集についての別の規約
