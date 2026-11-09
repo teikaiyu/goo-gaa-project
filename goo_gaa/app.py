@@ -23,6 +23,8 @@ from dotenv import load_dotenv
 from goo_gaa.avatar_client import AvatarConfig, AvatarFeed, fetch_avatar
 from goo_gaa.local_avatar import local_image_data_url
 from goo_gaa.monitor import Monitor
+from goo_gaa.notes import NoteStore
+from goo_gaa.notes_research import NoteResearcher, fetch_research
 from goo_gaa.watcher_macos import get_snapshot, warm_up
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -31,17 +33,43 @@ WEB_DIR = Path(__file__).parent / "web"
 class Api:
     """Everything the page may call. Public methods here == the JS-visible surface."""
 
-    def __init__(self, monitor: Monitor, feed: AvatarFeed | None = None) -> None:
+    def __init__(self, monitor: Monitor, feed: AvatarFeed | None = None,
+                 notes: NoteStore | None = None, researcher: NoteResearcher | None = None) -> None:
         self._monitor = monitor  # leading underscore: not exposed to JS
         self._feed = feed
+        self._notes = notes or NoteStore()
+        self._researcher = researcher
+        self._watching = False
         self._window: webview.Window | None = None
 
     def get_state(self) -> dict:
-        """{social_seconds, total_seconds, avatar}. `avatar` is None until the cloud has answered
-        (or always, when it is not configured) and never contains the picture itself."""
+        """{social_seconds, total_seconds, avatar, watching}. `avatar` is None until the cloud has
+        answered (or always, when it is not configured) and never contains the picture itself."""
         state = dict(self._monitor.state())
         state["avatar"] = self._feed.state() if self._feed else None
+        state["watching"] = self._watching
         return state
+
+    # ---------- memos ----------
+    def list_notes(self) -> list[dict]:
+        """Newest first: {id, text, created_at, research: None | {summary, next_step}}."""
+        return self._notes.all()
+
+    def add_note(self, text: str) -> dict | None:
+        """Save a memo and let the avatar start researching it. None = blank text, nothing saved."""
+        note = self._notes.add(text)
+        if note and self._researcher:
+            self._researcher.wake()
+        return note
+
+    def delete_note(self, note_id: str) -> None:
+        self._notes.delete(note_id)
+
+    # ---------- "watch SNS for me" ----------
+    def set_watching(self, on: bool) -> bool:
+        """The user hands SNS over to the avatar (True) or takes it back (False)."""
+        self._watching = bool(on)
+        return self._watching
 
     def get_avatar_image(self, mood: str) -> str | None:
         """The picture for a mood as a data: URL. The page asks once per mood, not every second.
@@ -58,7 +86,7 @@ class Api:
             self._window.destroy()
 
 
-def _make_feed(monitor: Monitor) -> AvatarFeed | None:
+def _load_config() -> AvatarConfig | None:
     try:
         config = AvatarConfig.from_env()
     except ValueError as e:
@@ -67,12 +95,23 @@ def _make_feed(monitor: Monitor) -> AvatarFeed | None:
     if config is None:
         print("[info] avatar disabled: set AVATAR_API_URL and AVATAR_API_TOKEN in .env to enable it",
               file=sys.stderr)
+    return config
+
+
+def _make_feed(monitor: Monitor, config: AvatarConfig | None) -> AvatarFeed | None:
+    if config is None:
         return None
     return AvatarFeed(
         get_usage=monitor.state,
         fetch=lambda social, total, include_image: fetch_avatar(config, social, total, include_image),
         refresh_sec=config.refresh_sec,
     )
+
+
+def _make_researcher(notes: NoteStore, config: AvatarConfig | None) -> NoteResearcher | None:
+    if config is None:
+        return None  # memos still work offline; they just stay "not researched yet"
+    return NoteResearcher(notes, fetch=lambda text: fetch_research(config, text))
 
 
 def _exit_now(code: int = 0) -> None:
@@ -94,11 +133,16 @@ def main() -> None:
     load_dotenv()  # reads .env into the environment if present (it is gitignored: it holds the token)
     monitor = Monitor(sample=get_snapshot, warm_up=warm_up)
     monitor.start()
-    feed = _make_feed(monitor)
+    config = _load_config()
+    feed = _make_feed(monitor, config)
     if feed:
         feed.start()
+    notes = NoteStore()
+    researcher = _make_researcher(notes, config)
+    if researcher:
+        researcher.start()  # also researches memos left over from the last session
 
-    api = Api(monitor, feed)
+    api = Api(monitor, feed, notes, researcher)
     api._window = webview.create_window(
         "goo-gaa",
         str(WEB_DIR / "index.html"),
@@ -118,6 +162,8 @@ def main() -> None:
         traceback.print_exc()
         code = 1
     finally:
+        if researcher:
+            researcher.stop()
         if feed:
             feed.stop()
         monitor.stop()      # always stop the threads, even on error (Graceful Shutdown)

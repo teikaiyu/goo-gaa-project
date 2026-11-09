@@ -86,13 +86,9 @@ window.Avatar = {
 
   _say(a) {
     // textContent (never innerHTML): the words come from an AI model, so treat them as untrusted text.
+    // Only the main line is shown. `a.action` (the small second line) is still in the state, but the
+    // widget no longer displays it: the next step now comes from the memo research instead.
     this._speech.textContent = a.message || '';
-    if (a.action) {
-      const span = document.createElement('span');
-      span.className = 'action';
-      span.textContent = a.action;
-      this._speech.appendChild(span);
-    }
     this._speech.hidden = !a.message;
   },
 };

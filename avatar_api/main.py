@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from gemini import AvatarGenerator
 from images import images_dir, load_image
 from mood import FALLBACK_LINES, Mood, decide_mood
-from schemas import AvatarRequest, AvatarResponse
+from schemas import AvatarRequest, AvatarResponse, ResearchRequest, ResearchResponse
 
 app = FastAPI(title="goo-gaa avatar API")
 
@@ -58,6 +58,18 @@ def _warn_missing_image(mood: Mood) -> None:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/research", response_model=ResearchResponse, dependencies=[Depends(check_token)])
+def research(req: ResearchRequest, gen: AvatarGenerator = Depends(get_generator)) -> ResearchResponse:
+    """Pre-research one memo. Google trouble never fails the request: source="fallback" with empty
+    text tells the desktop app "not researched yet", and it asks again later."""
+    try:
+        r = gen.research(req.note)
+        return ResearchResponse(summary=r.summary, next_step=r.next_step, source="gemini")
+    except Exception as e:
+        _warn("research", e)  # error type + HTTP code only: the memo text is never logged
+        return ResearchResponse(summary="", next_step="", source="fallback")
 
 
 @app.post("/avatar", response_model=AvatarResponse, dependencies=[Depends(check_token)])
