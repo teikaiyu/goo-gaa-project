@@ -10,6 +10,7 @@
 #   RUNTIME_SA    default avatar-api-sa@${GCP_PROJECT}.iam.gserviceaccount.com
 #                 (needs roles/aiplatform.user + roles/secretmanager.secretAccessor)
 #   SECRET_NAME   default api-token     Secret Manager secret that holds API_TOKEN
+#   SESSION_SECRET default sns-session  Secret Manager secret with the SNS login (scripts/save_sns_session.py)
 #   MAX_INSTANCES default 2             cost guard: caps how many copies can run at once
 #   SKIP_TESTS    set to 1 to skip the pre-deploy test run
 #
@@ -24,6 +25,7 @@ SERVICE="${SERVICE:-avatar-api}"
 RUNTIME_SA="${RUNTIME_SA:-avatar-api-sa@${GCP_PROJECT}.iam.gserviceaccount.com}"
 SECRET_NAME="${SECRET_NAME:-api-token}"
 MAX_INSTANCES="${MAX_INSTANCES:-2}"
+SESSION_SECRET="${SESSION_SECRET:-sns-session}"
 
 # Always run from the repo root: the Docker build needs both avatar_api/ and images/.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -39,8 +41,13 @@ if [[ "${SKIP_TESTS:-}" != "1" ]]; then
   (cd avatar_api && "$VENV/bin/python" -m pytest -q)
 fi
 
+echo "==> building the iPhone web app"
+command -v flutter >/dev/null || { echo "flutter not found (brew install --cask flutter)" >&2; exit 1; }
+(cd lumo_app && flutter build web --release)
+
 echo "==> deploying ${SERVICE} to ${GCP_PROJECT}/${REGION}"
 # --source . : Cloud Build builds the root Dockerfile, so no local Docker is needed.
+# --memory/--timeout: /patrol runs a headless Chromium for a minute or two.
 # --allow-unauthenticated: the desktop app has no Google identity; the bearer token (API_TOKEN, from
 #   Secret Manager) is the lock, and the service refuses to start serving without it.
 gcloud run deploy "$SERVICE" \
@@ -49,7 +56,8 @@ gcloud run deploy "$SERVICE" \
   --allow-unauthenticated \
   --max-instances "$MAX_INSTANCES" \
   --set-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT}" \
-  --set-secrets "API_TOKEN=${SECRET_NAME}:latest" \
+  --set-secrets "API_TOKEN=${SECRET_NAME}:latest,/secrets/sns-session.json=${SESSION_SECRET}:latest" \
+  --memory 2Gi --timeout 600 \
   --quiet
 
 echo "==> smoke test"
@@ -58,7 +66,7 @@ URL="$(gcloud run services describe "$SERVICE" --project "$GCP_PROJECT" --region
 # /health: public and cheap. (Not /healthz: Cloud Run's front end swallows that path.)
 curl -fsS --max-time 30 "${URL}/health" >/dev/null && echo "health ok"
 # Both endpoints must reject a request without the token (401), proving the lock is on.
-for path in avatar research; do
+for path in avatar research patrol; do
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -X POST \
             -H 'content-type: application/json' -d '{}' "${URL}/${path}")"
   [[ "$code" == "401" ]] || { echo "FAIL: /${path} answered ${code} without a token (expected 401)" >&2; exit 1; }

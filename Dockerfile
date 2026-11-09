@@ -9,10 +9,16 @@ WORKDIR /app
 # BuildKit accepts it. The trailing slash works with both.
 COPY avatar_api/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
+# Headless Chromium for /patrol. Installed to a shared path so the non-root user below can run it.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN playwright install --with-deps chromium
 
 COPY avatar_api/*.py ./
 COPY images/ images/
 ENV IMAGES_DIR=/app/images
+# The iPhone web app (Flutter). Built locally first: scripts/deploy_avatar_api.sh runs `flutter build web`.
+COPY lumo_app/build/web/ web/
+ENV WEB_DIR=/app/web
 
 # Least privilege: the web server needs no root. If it were ever compromised, the
 # attacker would not own the container.

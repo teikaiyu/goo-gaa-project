@@ -4,3 +4,4 @@
 !avatar_api/requirements.txt
 !avatar_api/*.py
 !images/
+!lumo_app/build/web/

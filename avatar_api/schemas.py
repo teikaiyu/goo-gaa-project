@@ -40,6 +40,16 @@ class WatchRequest(BaseModel):
         return [t.strip()[:100] for t in v if t.strip()]  # trim + cap, drop blanks
 
 
+class PatrolRequest(BaseModel):
+    # The apps the user does not want to see; Lumo looks at them instead (once, when the focus session ends).
+    services: list[Literal["instagram", "x", "youtube"]] = Field(min_length=1, max_length=3)
+
+    @field_validator("services")
+    @classmethod
+    def _dedupe(cls, v: list[str]) -> list[str]:
+        return list(dict.fromkeys(v))
+
+
 class WatchItem(BaseModel):
     title: str   # what it was about (<= 30 chars)
     gist: str    # what people were saying (<= 60 chars)

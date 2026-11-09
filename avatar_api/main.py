@@ -9,11 +9,12 @@ import sys
 from functools import lru_cache
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.staticfiles import StaticFiles
 
 from gemini import AvatarGenerator
 from images import images_dir, load_image
 from mood import FALLBACK_LINES, Mood, decide_mood
-from schemas import (AvatarRequest, AvatarResponse, ResearchRequest, ResearchResponse,
+from schemas import (AvatarRequest, AvatarResponse, PatrolRequest, ResearchRequest, ResearchResponse,
                      RecapRequest, RecapResponse, WatchItem, WatchRequest, WatchResponse)
 
 app = FastAPI(title="goo-gaa avatar API")
@@ -98,6 +99,20 @@ def watch(req: WatchRequest, gen: AvatarGenerator = Depends(get_generator)) -> W
         return WatchResponse(report="", items=[], source="fallback")
 
 
+@app.post("/patrol", response_model=WatchResponse, dependencies=[Depends(check_token)])
+def patrol(req: PatrolRequest, gen: AvatarGenerator = Depends(get_generator)) -> WatchResponse:
+    """Lumo really looks at the user's SNS (logged-in browser + Gemini Computer Use) and tells what it saw.
+    Any trouble (no saved session, login wall, Google down) -> source="fallback" with empty text; the app
+    then falls back to /watch. Nothing seen is logged."""
+    try:
+        r = gen.patrol(req.services)
+        items = [WatchItem(title=i.title[:30], gist=i.gist[:60]) for i in r.items[:5]]
+        return WatchResponse(report=r.report, items=items, source="gemini")
+    except Exception as e:
+        _warn("patrol", e)
+        return WatchResponse(report="", items=[], source="fallback")
+
+
 @app.post("/avatar", response_model=AvatarResponse, dependencies=[Depends(check_token)])
 def avatar(req: AvatarRequest, gen: AvatarGenerator = Depends(get_generator)) -> AvatarResponse:
     mood = decide_mood(req.social_seconds)  # always works: no Google involved
@@ -131,3 +146,10 @@ def avatar(req: AvatarRequest, gen: AvatarGenerator = Depends(get_generator)) ->
         image_source=image_source,
         source=source,
     )
+
+
+# Same origin as the API, so the app needs no CORS. Mounted LAST: the API routes above win.
+if images_dir().is_dir():
+    app.mount("/lumo", StaticFiles(directory=images_dir()), name="lumo")
+if os.path.isdir(os.environ.get("WEB_DIR", "")):
+    app.mount("/", StaticFiles(directory=os.environ["WEB_DIR"], html=True), name="web")
