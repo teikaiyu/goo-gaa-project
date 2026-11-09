@@ -313,7 +313,7 @@ class ReportPage extends StatelessWidget {
         child: SafeArea(
           child: ListView(padding: const EdgeInsets.symmetric(vertical: 24), children: [
             LumoSays(
-              report.items.isEmpty ? 'Lumo_calm.png' : 'Lumo_cheering.png',
+              report.items.isEmpty ? 'Lumo_disappointed.png' : 'Lumo_cheering.png',
               'えらい！${(totalSeconds / 60).round()}分がんばったね\n${report.text}',
               label: 'ほめる Lumo',
             ),
