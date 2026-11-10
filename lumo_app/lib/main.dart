@@ -449,10 +449,32 @@ class _PatrolPageState extends State<PatrolPage> {
               const Spacer(),
               _primary('完了して Lumo を呼び戻す', _finish),
               _secondary('自分で見る', () async {
+                final watched = [for (final s in serviceNames.keys) if (widget.lumo.watched.contains(s)) s];
+                // More than one app: the user picks which one (an action sheet, HIG's way to choose an action).
+                final service = watched.length == 1
+                    ? watched.first
+                    : await showCupertinoModalPopup<String>(
+                        context: context,
+                        builder: (sheet) => CupertinoActionSheet(
+                          title: const Text('どれを見る？'),
+                          actions: [
+                            for (final s in watched)
+                              CupertinoActionSheetAction(
+                                onPressed: () => Navigator.pop(sheet, s),
+                                child: Text(serviceNames[s]!),
+                              ),
+                          ],
+                          cancelButton: CupertinoActionSheetAction(
+                            onPressed: () => Navigator.pop(sheet),
+                            child: const Text('キャンセル'),
+                          ),
+                        ),
+                      );
+                if (service == null) return; // cancelled: the patrol goes on
                 widget.lumo.stop();
                 _toExtension('sync'); // the patrol is over: the extension must not shield the page opened next
                 await Future<void>.delayed(const Duration(milliseconds: 500));
-                _openMyself(widget.lumo.watched.first);
+                _openMyself(service);
               }),
             ],
           ),

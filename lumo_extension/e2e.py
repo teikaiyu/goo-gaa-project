@@ -174,6 +174,17 @@ def main():
         go(tab, "https://www.youtube.com/")
         tab.wait_for_url(re.compile(r"\?shield=youtube$"), timeout=15000)
         check("without touching the switches, youtube.com -> Lumo's Shield", True)
+
+        # 自分で見る with two apps on (Instagram and YouTube): the user picks one; キャンセル keeps the patrol.
+        app.bring_to_front()
+        app.get_by_role("button", name="自分で見る").click()
+        app.get_by_role("button", name="キャンセル").click()
+        app.get_by_role("button", name="完了して Lumo を呼び戻す").wait_for()
+        app.get_by_role("button", name="自分で見る").click()
+        app.get_by_role("button", name="YouTube").click()
+        app.wait_for_url(re.compile(r"^https://www\.youtube\.com/$"), timeout=15000)
+        check("自分で見る lets the user pick YouTube even with Instagram on, and opens it unshielded",
+              stays(app, r"^https://www\.youtube\.com/$"))
         ctx.close()
 
 
