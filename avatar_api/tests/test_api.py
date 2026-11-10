@@ -196,3 +196,13 @@ def test_extension_zip_is_the_repo_extension_without_tests(monkeypatch):
 def test_extension_zip_missing_is_404(monkeypatch, tmp_path):
     monkeypatch.setenv("EXTENSION_DIR", str(tmp_path / "nope"))
     assert client(FakeGen()).get("/lumo_extension.zip").status_code == 404
+
+
+def test_extension_zip_carries_the_bundled_app(monkeypatch, tmp_path):
+    for f in ("manifest.json", "build.sh", "e2e.py", "rules.test.mjs", "app/index.html", "app/canvaskit/c.wasm",
+              "lumo/Lumo_smile.png", "notes/x.md"):
+        (tmp_path / f).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / f).write_text("x")
+    monkeypatch.setenv("EXTENSION_DIR", str(tmp_path))
+    names = set(zipfile.ZipFile(io.BytesIO(client(FakeGen()).get("/lumo_extension.zip").content)).namelist())
+    assert names == {"manifest.json", "app/index.html", "app/canvaskit/c.wasm", "lumo/Lumo_smile.png"}

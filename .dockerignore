@@ -8,3 +8,5 @@
 !lumo_extension/*.js
 !lumo_extension/*.json
 !lumo_extension/*.md
+!lumo_extension/app/
+!lumo_extension/lumo/

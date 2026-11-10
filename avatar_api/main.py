@@ -80,11 +80,13 @@ def extension_zip() -> Response:
         raise HTTPException(404, "extension not bundled")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for p in sorted(d.iterdir()):
-            if p.is_file() and p.suffix in (".js", ".json", ".md"):  # what Chrome loads + the README; no tests
-                # Files at the top: macOS and Windows then both unzip into ONE folder named lumo_extension
-                # (a top folder inside the zip ends up nested on Windows, and that outer folder fails to load).
-                z.write(p, p.name)
+        for p in sorted(d.rglob("*")):
+            rel = p.relative_to(d)
+            # What Chrome loads + the README; no tests or build script. app/ and lumo/ are the bundled app (build.sh).
+            if p.is_file() and (rel.parts[0] in ("app", "lumo") or (len(rel.parts) == 1 and p.suffix in (".js", ".json", ".md"))):
+                # Paths from the extension folder: macOS and Windows then both unzip into ONE folder named
+                # lumo_extension (a top folder inside the zip ends up nested on Windows, and that outer folder fails to load).
+                z.write(p, rel.as_posix())
     return Response(buf.getvalue(), media_type="application/zip",
                     headers={"content-disposition": 'attachment; filename="lumo_extension.zip"'})
 

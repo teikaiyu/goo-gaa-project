@@ -1,3 +1,4 @@
+// The Lumo app itself lives in this extension (app/, built by build.sh): the toolbar button opens it.
 // While a patrol runs, a tab that opens a watched SNS is sent to the Lumo app's Shield page.
 // The Shield's buttons come back here: "やっぱやめとく" closes the tab, "開く" lets it through.
 // State is kept in chrome.storage.session because Chrome may stop this service worker at any time.
@@ -13,7 +14,7 @@ async function shield(tabId, url) {
   if (!service) return;
   blocked[tabId] = url; // where to go if the user taps "開く"
   await set({ blocked });
-  await chrome.tabs.update(tabId, { url: `${lumo.app}/?shield=${service}` });
+  await chrome.tabs.update(tabId, { url: `${lumo.app}?shield=${service}` });
 }
 
 // A new page load, and in-app navigation of sites like Instagram (they change the URL without reloading).
@@ -27,9 +28,11 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 async function handle(msg, sender) {
   const tabId = sender.tab?.id;
   if (msg.type === 'state') {
-    // From bridge.js on the Lumo app: what is watched, and until when.
+    // From bridge.js on the Lumo app (this extension's app/ or the Cloud Run page): what is watched, until when.
+    // `app` is that page without its query, so the Shield opens in the same app: .../app/index.html or https://….run.app/
     const { lumo } = await get('lumo');
-    const next = { endsAt: msg.endsAt, watched: msg.watched, app: sender.origin };
+    const page = new URL(sender.url);
+    const next = { endsAt: msg.endsAt, watched: msg.watched, app: page.origin + page.pathname };
     await set({ lumo: next });
     if (lumo?.endsAt !== next.endsAt) {
       await set({ allowed: [], blocked: {} }); // a new patrol: forget earlier "開く" choices
@@ -46,9 +49,21 @@ async function handle(msg, sender) {
   }
 }
 
-// Lumo app tabs opened before the extension was installed (or reloaded) have no working bridge.js,
-// so the patrol would never reach here. Reload them: the app keeps its patrol in localStorage.
-chrome.runtime.onInstalled.addListener(async () => {
+const APP = chrome.runtime.getURL('app/index.html');
+
+// One Lumo tab: bring back the one already open instead of opening another.
+async function openApp() {
+  const tab = (await chrome.tabs.query({})).find((t) => t.url?.startsWith(APP)); // match patterns skip chrome-extension://
+  if (tab) await chrome.tabs.update(tab.id, { active: true });
+  else await chrome.tabs.create({ url: APP });
+}
+
+chrome.action.onClicked.addListener(openApp);
+
+chrome.runtime.onInstalled.addListener(async ({ reason }) => {
+  if (reason === 'install') await openApp(); // first install: show Lumo right away
+  // Cloud Run Lumo tabs opened before the extension was installed (or reloaded) have no working bridge.js,
+  // so their patrol would never reach here. Reload them: the app keeps its patrol in localStorage.
   const urls = chrome.runtime.getManifest().content_scripts[0].matches;
   for (const tab of await chrome.tabs.query({ url: urls })) chrome.tabs.reload(tab.id);
 });

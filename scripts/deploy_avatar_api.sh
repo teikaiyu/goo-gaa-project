@@ -47,6 +47,8 @@ echo "==> building the iPhone web app"
 # The Dockerfile copies lumo_app/build/web, so it must be fresh before the upload.
 [[ -n "${GOOGLE_CLIENT_ID:-}" ]] || echo "note: GOOGLE_CLIENT_ID is not set -> Lumo cannot connect to YouTube"
 (cd lumo_app && flutter build web --release --dart-define=GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}")
+echo "==> putting the app inside the Chrome extension (handed out as /lumo_extension.zip)"
+lumo_extension/build.sh
 
 echo "==> deploying ${SERVICE} to ${GCP_PROJECT}/${REGION}"
 # --source . : Cloud Build builds the root Dockerfile, so no local Docker is needed.

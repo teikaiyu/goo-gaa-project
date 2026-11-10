@@ -270,7 +270,7 @@ class ExtensionGuidePage extends StatelessWidget {
                   '「パッケージ化されていない拡張機能を読み込む」を押して、lumo_extension フォルダを選ぶ',
                   'manifest.json が入っているフォルダです。使っているあいだは消さないでね',
                 ),
-                step(6, 'このタブに戻る', 'Lumo が自動で読み込み直して「拡張機能が動いています」と出たら完了'),
+                step(6, 'Lumo が新しいタブで開いたら完了', 'Lumo は拡張機能の中にいます。次からは Chrome 右上のパズルのアイコン → Lumo で開けます'),
               ],
             ),
             Padding(
@@ -288,7 +288,7 @@ class ExtensionGuidePage extends StatelessWidget {
             CupertinoListSection.insetGrouped(
               header: const Text('入れたのに遮られないときは'),
               children: [
-                tip('シークレット ウィンドウでは動きません', 'ふつうのウィンドウで Lumo と SNS を開いてね'),
+                tip('シークレット ウィンドウとゲストでは動きません', 'ふつうのウィンドウで Lumo と SNS を開いてね。ゲストには拡張機能を入れられません'),
                 tip('「始める」の前に、遮りたいアプリのスイッチをオンに', 'オフのアプリは、集中中でも開けます'),
                 tip('前に入れた Lumo があるときは、削除してから入れ直す', 'chrome://extensions の Lumo の「削除」を押してから、手順 5 をやり直してね'),
               ],

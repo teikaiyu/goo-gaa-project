@@ -1,15 +1,45 @@
 {
   "manifest_version": 3,
   "name": "Lumo",
-  "version": "0.2.0",
-  "description": "パトロール中に、Lumo が代わりに見ている SNS を開くと Lumo が出てきます。",
-  "permissions": ["storage", "tabs", "webNavigation"],
-  "background": { "service_worker": "background.js", "type": "module" },
+  "version": "0.3.0",
+  "description": "Lumo のタイマーと、集中中に SNS を開くと出てくる Lumo。拡張機能のボタンから始めます。",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvYj3CSRs6ThcZCNePWyNK0GsFEHloyrP7ga4aCMH/YsPalArTEjWmWF6nLZJz248jSGCIue9EvesWbUU4auhxLmFYiRzREOIao2UL02KEcrPER81QzaODAXcDg1BKvZjdJPS/i1gW+fMpHWmxN7WyreW5L6QqWYya9G16M7ewZmzcXsZPZNl+lCvX0FJPOa+VUQSclC/BL0d4qM3YES79HGYJRHpANfI9Y99vDKqeGwPSefJ7zVkp9jYjBqa1Mca2xJFthm8J3tZIhel2mhAyI8uZCFY0Uwd5flFc0fYTvOQ1F7ew9QOXvZEP0Rp6g/7zsF3ulJK6G3bJPktstO7pwIDAQAB",
+  "icons": {
+    "128": "lumo/Lumo_smile.png"
+  },
+  "action": {
+    "default_title": "Lumo を開く",
+    "default_icon": {
+      "128": "lumo/Lumo_smile.png"
+    }
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "webNavigation",
+    "identity"
+  ],
+  "host_permissions": [
+    "https://*.run.app/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "content_scripts": [
     {
-      "matches": ["http://localhost:8080/*", "http://127.0.0.1:8080/*", "https://*.run.app/*"],
-      "js": ["bridge.js"],
+      "matches": [
+        "http://localhost:8080/*",
+        "http://127.0.0.1:8080/*",
+        "https://*.run.app/*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
       "run_at": "document_start"
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
 }

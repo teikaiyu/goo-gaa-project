@@ -27,6 +27,10 @@ ShieldSupport shieldSupport({required bool extension, required bool computer, re
     ? ShieldSupport.needsExtension
     : ShieldSupport.unsupported;
 
+/// Where the API is when this app is not served by it (the copy inside the Chrome extension):
+/// flutter build web --dart-define=API_BASE=https://….run.app/  (lumo_extension/build.sh). Empty: same origin.
+const apiBase = String.fromEnvironment('API_BASE');
+
 /// 90 -> "1時間30分", 25 -> "25分", 60 -> "1時間".
 String minutesLabel(int m) => [if (m >= 60) '${m ~/ 60}時間', if (m % 60 > 0 || m == 0) '${m % 60}分'].join();
 
@@ -190,7 +194,8 @@ class Lumo {
     try {
       final res = await _http
           .post(
-            Uri.base.resolve(path), // same origin: Cloud Run serves this app and the API
+            // Same origin on Cloud Run (it serves this app and the API); the extension's copy names the API.
+            apiBase.isEmpty ? Uri.base.resolve(path) : Uri.parse(apiBase).resolve(path),
             headers: {'content-type': 'application/json', if (token.isNotEmpty) 'authorization': 'Bearer $token'},
             body: jsonEncode(body),
           )

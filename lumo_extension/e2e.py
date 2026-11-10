@@ -1,17 +1,19 @@
-"""End-to-end check of the Lumo extension with the real app, in Playwright's Chromium (headless).
+"""End-to-end check of the Lumo extension, which carries the Lumo app inside it, in Playwright's Chromium (headless).
 
     start -> open youtube.com -> Lumo's Shield -> "やっぱやめとく" closes the tab
                                                -> "開く" lets that tab through
           -> finish -> youtube.com opens normally
 
-Also checks: without the extension, home asks for it and its guide downloads lumo_extension.zip; with it (loaded
-from that very zip), the app sees it (home says so), the extension finds open Lumo tabs (it reloads them when installed), and an app the user
-did not pick (Instagram) is left alone.
+First, on the web app (Cloud Run / localhost): without the extension, home asks for it and its guide downloads
+lumo_extension.zip. Then only that zip is installed and everything runs on the extension's own Lumo page
+(chrome-extension://…/app/index.html): home says the extension is running, the patrol, the Shield, the report.
+An app the user did not pick (Instagram) is left alone. The report calls the API on Cloud Run without a key, so
+it shows Lumo's fallback words; that is enough to see the flow end.
 
-No real SNS and no Google sign-in: youtube.com / instagram.com answer with a stub page, and Google's sign-in
-script is replaced by one that says "the user closed the window" (Lumo then starts without YouTube access).
+No real SNS and no Google sign-in: youtube.com / instagram.com answer with a stub page, and the build has no
+OAuth client ID, so Lumo starts without YouTube access.
 
-Run from the repo root, after `cd lumo_app && flutter build web`:
+Run from the repo root, after `(cd lumo_app && flutter build web)` and `lumo_extension/build.sh`:
     .venv/bin/pip install playwright && .venv/bin/playwright install chromium   # once
     .venv/bin/python lumo_extension/e2e.py [APP_URL]    # default http://localhost:8080
 If nothing answers at http://localhost:8080, this starts avatar_api there (WEB_DIR=lumo_app/build/web) and stops it.
@@ -34,8 +36,6 @@ EXT = Path(__file__).resolve().parent
 REPO = EXT.parent
 APP = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8080").rstrip("/")
 SNS = re.compile(r"^https://([\w-]+\.)*(youtube|instagram)\.com/")
-GOOGLE_SAYS_NO = ("window.google = {accounts: {oauth2: {initTokenClient: (c) => "
-                  "({requestAccessToken: () => c.error_callback({type: 'popup_closed'})})}}};")
 
 
 def up(url: str) -> bool:
@@ -118,27 +118,20 @@ def main():
         ext = without_extension(pw)  # the rest runs on what users download, not on this repo folder
         ctx = chromium(pw, f"--disable-extensions-except={ext}", f"--load-extension={ext}")
         ctx.route(SNS, lambda r: r.fulfill(content_type="text/html", body="<title>SNS (stub)</title>"))
-        ctx.route("https://accounts.google.com/gsi/client*",
-                  lambda r: r.fulfill(content_type="text/javascript", body=GOOGLE_SAYS_NO))
         sw = ctx.service_workers[0] if ctx.service_workers else ctx.wait_for_event("serviceworker")
-        time.sleep(1)  # let onInstalled finish first: it would reload the app tab opened below mid-test
+        time.sleep(1)  # let onInstalled finish first
 
+        # From here on no server is needed: the app is the extension's own page (what its toolbar button opens).
         app = ctx.new_page()
-        app.goto(APP)
+        app.goto(sw.url.replace("background.js", "app/index.html"))
         app.evaluate("() => localStorage.setItem('flutter.watched', JSON.stringify(['youtube']))")
         app.reload()
         accessible(app)
-        check("the app sees the extension", app.evaluate("() => document.documentElement.dataset.lumoExtension")
+        check("the extension's own Lumo page runs", app.evaluate("() => document.documentElement.dataset.lumoExtension")
               == version)
         # A list section reaches the accessibility tree as one group labelled with all of its rows.
         app.get_by_label(re.compile("拡張機能が動いています")).wait_for(timeout=15000)
         check("home says the extension is running", True)
-
-        # On install the extension reloads the Lumo tabs it finds this way (background.js onInstalled).
-        # shortcut: checks the lookup only; chrome.runtime.reload() drops a --load-extension extension in Playwright.
-        found = sw.evaluate("chrome.tabs.query({url: chrome.runtime.getManifest().content_scripts[0].matches})"
-                            ".then(ts => ts.map(t => t.url))")
-        check("on install the extension would find this Lumo tab to reload it", f"{APP}/" in found)
 
         app.get_by_role("button", name="始める").click()
         app.get_by_role("button", name="完了して Lumo を呼び戻す").wait_for()
@@ -150,8 +143,8 @@ def main():
 
         tab = ctx.new_page()
         go(tab, "https://www.youtube.com/")
-        tab.wait_for_url(re.compile(r"\?shield=youtube$"), timeout=15000)
-        check("youtube.com -> Lumo's Shield", True)
+        tab.wait_for_url(re.compile(r"/app/index\.html\?shield=youtube$"), timeout=15000)
+        check("youtube.com -> Lumo's Shield (inside the extension)", True)
         with tab.expect_event("close", timeout=15000):
             accessible(tab).get_by_role("button", name="やっぱやめとく").click()
         check("やっぱやめとく closes the tab", tab.is_closed())
@@ -166,7 +159,8 @@ def main():
         check("...and it stays open for this patrol", stays(tab, r"^https://www\.youtube\.com/watch"))
 
         app.get_by_role("button", name="完了して Lumo を呼び戻す").click()
-        app.get_by_role("button", name="次のタスクに進む").wait_for(timeout=30000)
+        app.get_by_role("button", name="次のタスクに進む").wait_for(timeout=60000)
+        check("完了 shows Lumo's report", True)
         after = ctx.new_page()
         go(after, "https://www.youtube.com/")
         check("after the patrol, youtube.com opens normally", stays(after, r"^https://www\.youtube\.com/$"))
