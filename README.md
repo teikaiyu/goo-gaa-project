@@ -32,17 +32,16 @@
 
 ### 仕組み
 ```
-ブラウザ（iPhone / PC）                                  Google Cloud
-┌───────────────────────────────┐   静的配信 / API   ┌──────────────────────────────┐
-│ lumo_app（Flutter Web）         │ ◀────────────────▶ │ Cloud Run: avatar_api（FastAPI） │
-│  ホーム → パトロール中 → 報告    │   POST /patrol     │  /patrol → Gemini（Vertex AI） │
-│  YouTube Data API を直接呼ぶ     │                    │  Secret Manager: api-token     │
-└──────────┬────────────────────┘                    └──────────────────────────────┘
-           │ パトロールの状態                        ▲
-┌──────────▼────────────────────┐                     │ 公式 API（読み取り専用、本人の許可）
-│ lumo_extension（Chrome 拡張）    │        YouTube Data API v3 ◀── ブラウザから直接
-│  SNS のタブを Lumo の画面に切替   │
-└───────────────────────────────┘
+┌ Chrome ─────────────────────────────────────────────────────────────────┐
+│ 拡張機能 lumo_extension                                                  │
+│   ├ app/（lumo_app = Flutter Web、拡張機能に内包）                         │
+│   ├ bridge.js ── localStorage を 1 秒ごとに読む                           │
+│   └ background.js ── SNS タブを Lumo の画面へ切替                          │
+└──────┬───────────────────────────────────────────────────────┬──────────┘
+       │ ①OAuth 同意（トークンは端末内）                         　│ ③ POST /patrol
+       ▼                                                       ▼  {videos, channels, minutes}
+ Google OAuth ──② トークン ──▶ YouTube Data API v3      Cloud Run: avatar_api
+ （youtube.readonly）          （アプリが直接 GET）         └ Gemini（Vertex AI）
 ```
 
 ### 技術スタック
