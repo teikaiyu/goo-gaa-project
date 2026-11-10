@@ -94,6 +94,8 @@ class Lumo {
 
   void start() {
     final now = DateTime.now();
+    // Save what home shows: untouched switches are only defaults, and the extension reads the saved list.
+    _p.setStringList('watched', watched.toList());
     _p.setInt('startedAt', now.millisecondsSinceEpoch);
     _p.setInt('endsAt', now.add(Duration(minutes: minutes)).millisecondsSinceEpoch);
   }

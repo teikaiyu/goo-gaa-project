@@ -142,6 +142,13 @@ void main() {
     expect(calls, 0);
   });
 
+  test('start saves the apps home shows, even if no switch was touched', () async {
+    final lumo = await Lumo.load();
+    lumo.start();
+    final saved = (await SharedPreferences.getInstance()).getStringList('watched');
+    expect(saved, unorderedEquals(['instagram', 'youtube']));
+  });
+
   test('session survives a reload', () async {
     final lumo = await Lumo.load();
     lumo.minutes = 15;

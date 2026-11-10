@@ -164,6 +164,16 @@ def main():
         after = ctx.new_page()
         go(after, "https://www.youtube.com/")
         check("after the patrol, youtube.com opens normally", stays(after, r"^https://www\.youtube\.com/$"))
+
+        # A first-time user never touches the switches: home shows Instagram and YouTube on by default.
+        app.evaluate("() => localStorage.removeItem('flutter.watched')")
+        app.goto(app.url.split("?")[0])
+        accessible(app).get_by_role("button", name="始める").click()
+        app.get_by_role("button", name="完了して Lumo を呼び戻す").wait_for()
+        tab = ctx.new_page()
+        go(tab, "https://www.youtube.com/")
+        tab.wait_for_url(re.compile(r"\?shield=youtube$"), timeout=15000)
+        check("without touching the switches, youtube.com -> Lumo's Shield", True)
         ctx.close()
 
 
