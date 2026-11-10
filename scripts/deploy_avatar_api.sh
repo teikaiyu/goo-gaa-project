@@ -73,8 +73,9 @@ check /                      # the iPhone web app
 check /lumo/Lumo_smile.png   # Lumo's pictures
 check /lumo_extension.zip    # the Chrome extension the app tells PC users to install
 echo "health, app, images and extension ok"
-# Every Gemini endpoint must reject a request without the token (401), proving the lock is on.
-for path in avatar watch recap patrol; do
+# The desktop app's Gemini endpoints must reject a request without the token (401), proving the lock is on.
+# (/patrol is open on purpose and capped per day instead: avatar_api/main.py limit_patrol.)
+for path in avatar watch recap; do
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -X POST \
             -H 'content-type: application/json' -d '{}' "${URL}/${path}")"
   [[ "$code" == "401" ]] || { echo "FAIL: /${path} answered ${code} without a token (expected 401)" >&2; exit 1; }

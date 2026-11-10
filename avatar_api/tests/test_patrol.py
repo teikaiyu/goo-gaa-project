@@ -31,6 +31,8 @@ def client(gen) -> TestClient:
 def _clean_env(monkeypatch):
     monkeypatch.delenv("API_TOKEN", raising=False)
     monkeypatch.delenv("K_SERVICE", raising=False)
+    monkeypatch.delenv("PATROL_PER_DAY", raising=False)
+    main._patrol_today.update(day="", calls=0)
 
 
 VIDEO = {"channel": "料理チャンネル", "title": "10分パスタ", "description": "簡単!", "during": True}
@@ -67,9 +69,19 @@ def test_google_failure_says_failed_never_invents_content():
     assert body == {"report": "", "items": [], "status": "failed"}
 
 
-def test_token_required_when_configured(monkeypatch):
-    monkeypatch.setenv("API_TOKEN", "s3cret")
-    assert client(OkGen()).post("/patrol", json={}).status_code == 401
+def test_no_key_needed_even_when_the_api_is_locked(monkeypatch):
+    monkeypatch.setenv("API_TOKEN", "s3cret")  # still guards the desktop endpoints
+    assert client(OkGen()).post("/patrol", json={}).status_code == 200
+    assert client(OkGen()).post("/watch", json={}).status_code == 401
+
+
+def test_daily_cap_bounds_the_gemini_bill(monkeypatch):
+    monkeypatch.setenv("PATROL_PER_DAY", "2")
+    gen = OkGen()
+    codes = [client(gen).post("/patrol", json={}).status_code for _ in range(3)]
+    assert codes == [200, 200, 429]
+    main._patrol_today["day"] = "yesterday"  # a new day starts over
+    assert client(gen).post("/patrol", json={}).status_code == 200
 
 
 def test_prompt_marks_new_videos_and_treats_text_as_data():
