@@ -107,11 +107,6 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: CupertinoColors.systemGroupedBackground,
       navigationBar: CupertinoNavigationBar(
         middle: const Text('Lumo'),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => showCupertinoModalPopup(context: context, builder: (_) => SettingsSheet(lumo)),
-          child: const Icon(CupertinoIcons.gear, semanticLabel: '設定'),
-        ),
       ),
       child: SafeArea(
         child: ListView(
@@ -519,43 +514,4 @@ class ReportPage extends StatelessWidget {
       ),
     );
   }
-}
-
-// ---------- sheets ----------
-
-class SettingsSheet extends StatelessWidget {
-  const SettingsSheet(this.lumo, {super.key});
-  final Lumo lumo;
-
-  @override
-  Widget build(BuildContext context) => CupertinoPopupSurface(
-    child: SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('鍵（API トークン）', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            CupertinoTextField(
-              controller: TextEditingController(text: lumo.token),
-              obscureText: true,
-              autocorrect: false,
-              placeholder: 'チームから受け取った鍵',
-              onChanged: (v) => lumo.token = v,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'この端末の中だけに保存します。',
-              style: TextStyle(fontSize: 13, color: CupertinoColors.secondaryLabel.resolveFrom(context)),
-            ),
-            const SizedBox(height: 12),
-            CupertinoButton(onPressed: () => Navigator.pop(context), child: const Text('完了')),
-          ],
-        ),
-      ),
-    ),
-  );
 }

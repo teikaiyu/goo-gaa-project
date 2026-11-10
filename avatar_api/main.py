@@ -7,6 +7,7 @@ import hmac
 import io
 import os
 import sys
+import threading
 import time
 import zipfile
 from functools import lru_cache
@@ -116,7 +117,26 @@ def watch(gen: AvatarGenerator = Depends(get_generator)) -> WatchResponse:
         return WatchResponse(report="", items=[], source="fallback")
 
 
-@app.post("/patrol", response_model=PatrolResponse, dependencies=[Depends(check_token)])
+# /patrol is open: Lumo's app (also inside the public Chrome extension) carries no key, since a key handed out to
+# every user is no secret. The Gemini bill is bounded here instead: a daily cap per instance (Cloud Run runs at most
+# MAX_INSTANCES). Over it -> 429, and the app lists the videos itself without Lumo's comments.
+# shortcut: the count lives in memory, so a new instance starts from 0; move it to Firestore if abuse ever shows up.
+_patrol_lock = threading.Lock()
+_patrol_today = {"day": "", "calls": 0}
+
+
+def limit_patrol() -> None:
+    cap = int(os.environ.get("PATROL_PER_DAY", "300"))  # one report ≈ a few thousand tokens of Flash
+    with _patrol_lock:
+        day = time.strftime("%Y-%m-%d")
+        if _patrol_today["day"] != day:
+            _patrol_today.update(day=day, calls=0)
+        if _patrol_today["calls"] >= cap:
+            raise HTTPException(429, "daily report limit reached")
+        _patrol_today["calls"] += 1
+
+
+@app.post("/patrol", response_model=PatrolResponse, dependencies=[Depends(limit_patrol)])
 def patrol(req: PatrolRequest, gen: AvatarGenerator = Depends(get_generator)) -> PatrolResponse:
     """Lumo's patrol report from the user's YouTube subscriptions (videos fetched by the app with the user's
     own permission). Google trouble -> status="failed" (the app then lists the videos itself). Video text
