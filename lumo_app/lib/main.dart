@@ -182,14 +182,17 @@ class _HomePageState extends State<HomePage> {
                     lumo.watched.isEmpty || lumo.minutes == 0
                         ? null
                         : () async {
-                            // Ask Google for YouTube access first (it needs this tap to open its window).
-                            if (lumo.watched.contains('youtube') && !lumo.youtubeReady && youtubeConfigured) {
-                              final access = await askYouTube();
-                              if (access != null) lumo.setYouTubeAccess(access.$1, access.$2);
-                            }
+                            // Open Google's YouTube window right in this tap (browsers allow it only here), but never
+                            // wait for it to start: the shield must be on even if the user is still in that window,
+                            // closes it, or Google refuses. YouTube access only matters for the report at the end.
+                            final asking = lumo.watched.contains('youtube') && !lumo.youtubeReady && youtubeConfigured
+                                ? askYouTube()
+                                : null;
                             lumo.start();
                             _toExtension('sync'); // shield from this moment, not from the extension's next check
-                            if (context.mounted) _go(context, PatrolPage(lumo));
+                            _go(context, PatrolPage(lumo));
+                            final access = await asking;
+                            if (access != null) lumo.setYouTubeAccess(access.$1, access.$2);
                           },
                   ),
                 ],

@@ -58,7 +58,9 @@ node --test lumo_extension/rules.test.mjs     # URL の判定（Node だけ）
 
 # 通しの確認（本物のアプリ + Playwright の Chromium に拡張機能を入れる）
 .venv/bin/pip install playwright && .venv/bin/playwright install chromium   # 初回だけ
-(cd lumo_app && flutter build web) && lumo_extension/build.sh
+# 本番と同じく GOOGLE_CLIENT_ID を付けてビルドする（付けないと「始める」で Google の画面が開く場合を通らない）
+export GOOGLE_CLIENT_ID=<Web 版と同じクライアント ID>
+(cd lumo_app && flutter build web --dart-define=GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID) && lumo_extension/build.sh
 .venv/bin/python lumo_extension/e2e.py        # localhost:8080 に何もなければ、avatar_api を起動して終わったら止める
 ```
 
