@@ -20,9 +20,6 @@ async function shield(tabId, url) {
 // A new page load, and in-app navigation of sites like Instagram (they change the URL without reloading).
 chrome.webNavigation.onBeforeNavigate.addListener(({ tabId, frameId, url }) => frameId === 0 && shield(tabId, url));
 chrome.webNavigation.onHistoryStateUpdated.addListener(({ tabId, frameId, url }) => frameId === 0 && shield(tabId, url));
-// Any other way a tab ends up on the site. Chrome often loads a site typed in the address bar ahead of time
-// (prerendering); showing that page fires no webNavigation event for the tab, only this URL change.
-chrome.tabs.onUpdated.addListener((tabId, { url }) => url && shield(tabId, url));
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
   handle(msg, sender);
