@@ -26,7 +26,8 @@
   Instagram や X に自動でログインして見ることは、各サービスの規約に触れるため行わない（経緯は `docs/decisions.md`）。
 - YouTube の許可の鍵はユーザーのブラウザの中だけにあり、サーバーには送らない。サーバーに送るのは動画の題名と説明の 1 行目だけ。
 - Gemini には「渡された動画だけで話す」よう指示しており、存在しない動画を作らない。動画の文章はデータとして扱い、指示としては読まない。
-- API はトークン（Secret Manager の `api-token`）で保護している。
+- Lumo が使う `/patrol` は鍵なしで呼べる（拡張機能やアプリに鍵を入れて配ると、もう秘密ではないため）。代わりに、Gemini を呼ぶ回数に 1 日の上限を設けて費用の上限を決めている（`PATROL_PER_DAY`、既定 300 回 × 最大 2 台）。上限を超えると、Lumo は見つけた動画をコメントなしで並べる。
+- 最初のデスクトップ版の API（`/avatar` `/watch` `/recap`）は、引き続きトークン（Secret Manager の `api-token`）で保護している。
 
 ### 仕組み
 ```
@@ -72,9 +73,8 @@
 
 ### 使う（デプロイ済みの URL）
 1. **https://avatar-api-ek3vs4df7q-an.a.run.app** を開く（iPhone はホーム画面に追加するとアプリのように使える）。
-2. 右上の歯車 → **鍵** に API トークンを入れる（チームから受け取る）。
-3. やること・じゃまするアプリ・時間を選んで **始める**。YouTube を登録していると、最初に Google の許可画面が出る。
-4. 時間が来るか **完了して Lumo を呼び戻す** を押すと、Lumo が報告してくれる。
+2. やること・じゃまするアプリ・時間を選んで **始める**。YouTube を登録していると、最初に Google の許可画面が出る。
+3. 時間が来るか **完了して Lumo を呼び戻す** を押すと、Lumo が報告してくれる。
 
 **パソコンの Chrome で使う（SNS も遮る。おすすめ）**
 1. `<Lumo の URL>/lumo_extension.zip` をダウンロードして取り出す（Web 版のホームの **SNS を遮るには拡張機能を入れてね** からも落とせる）。
@@ -112,6 +112,25 @@ node --test lumo_extension/rules.test.mjs                 # 拡張機能
 - **自動**: PR はテストだけ、`main` に入るとテスト → ビルド → Cloud Run へデプロイ → 動作確認（`.github/workflows/deploy.yml`）。
   初回の準備は `scripts/setup_cicd.sh` と `docs/cicd.md`。
 - **手動**: `GCP_PROJECT=<プロジェクト ID> GOOGLE_CLIENT_ID=<クライアント ID> scripts/deploy_avatar_api.sh`
+
+### 動作を確かめた範囲（YouTube だけ）
+この開発で動作を確かめたのは、**youtube.com を開いたときの動きだけ**。Instagram と X は、遮る対象として選べるようにしてあるが、
+動作確認の対象にしていない。デモも YouTube で行う。
+
+| 確かめたこと | どこで |
+|---|---|
+| パトロール中に youtube.com を開くと、タブが Lumo の画面に差し替わる | 作者の Chrome（拡張機能を入れて、実際に操作）、自動テスト |
+| **やっぱやめとく** でタブが閉じる / **開く** でそのタブだけ通る / 終わったら通る | 自動テスト（`lumo_extension/e2e.py`、Playwright の Chromium。YouTube は偽のページに差し替え） |
+| スイッチを一度も触らずに始めても、youtube.com が遮られる | 自動テスト |
+| Instagram のスイッチがオフなら、instagram.com は遮られない | 自動テスト（オフのときだけ。オンのときは確かめていない） |
+| URL から SNS を見分ける規則（instagram.com・x.com・twitter.com・youtube.com、サブドメイン、似た名前の別サイト） | 単体テスト（`lumo_extension/rules.test.mjs`） |
+
+確かめていないこと:
+- **Instagram（instagram.com）と X（x.com / twitter.com）を、スイッチをオンにして遮る動き**。仕組みは YouTube と同じ
+  （サイトの URL で見分けて、同じ Lumo の画面に差し替える）なので、同じように動く想定だが、本物の Chrome でも自動テストでも開いていない。
+- Instagram と X のスイッチは、**遮るかどうか** と、報告の「ボクがしっかり見張ってたよ」の一言にしか関係しない。Lumo が実際に見に行って
+  報告するのは YouTube だけ（公式 API。Instagram と X は規約上見に行かない、上の「規約とプライバシー」）。
+- ホームの初期値は Instagram と YouTube がオン。YouTube だけで試すときは、Instagram のスイッチをオフにする。
 
 ### 今の限界
 - 遮れるのはパソコンの Chrome の Web 版 SNS だけ。iPhone のアプリと Safari を遮るには、ネイティブ iOS アプリ（Screen Time API）が必要（`PROBLEM.md` SPIKE-32）。

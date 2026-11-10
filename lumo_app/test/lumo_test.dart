@@ -129,10 +129,11 @@ void main() {
     expect([for (final i in r.items) i.gist], ['10分パスタ', '猫が箱に入る']);
   });
 
-  test('wrong key -> asks for the key', () async {
-    final lumo = await lumoWith(fakeWorld(patrolStatus: 401));
-    lumo.token = ' k ';
-    expect((await lumo.fetchReport()).text, contains('鍵'));
+  test('daily report limit (429) -> still shows the videos it found', () async {
+    final lumo = await lumoWith(fakeWorld(patrolStatus: 429));
+    final r = await lumo.fetchReport();
+    expect(r.text, startsWith('新しい動画が出てたよ'));
+    expect(r.items, hasLength(2));
   });
 
   test('YouTube not registered -> Lumo only guarded the others', () async {
@@ -140,6 +141,13 @@ void main() {
     final lumo = await lumoWith(MockClient((_) async => (calls++, _json({})).$2), youtube: false);
     expect((await lumo.fetchReport()).text, 'Instagram はボクがしっかり見張ってたよ！');
     expect(calls, 0);
+  });
+
+  test('start saves the apps home shows, even if no switch was touched', () async {
+    final lumo = await Lumo.load();
+    lumo.start();
+    final saved = (await SharedPreferences.getInstance()).getStringList('watched');
+    expect(saved, unorderedEquals(['instagram', 'youtube']));
   });
 
   test('session survives a reload', () async {

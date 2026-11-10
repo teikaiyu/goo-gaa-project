@@ -70,10 +70,6 @@ class Lumo {
   int get minutes => _p.getInt('minutes') ?? 25;
   set minutes(int v) => _p.setInt('minutes', v);
 
-  /// Shared secret for the API (API_TOKEN on Cloud Run). Typed once in Settings.
-  String get token => _p.getString('token') ?? '';
-  set token(String v) => _p.setString('token', v.trim());
-
   /// YouTube read-only access the user granted (Google Identity Services, about 1 hour). Kept only in
   /// this browser, sent only to Google: the Lumo server never sees it.
   bool get youtubeReady =>
@@ -94,6 +90,8 @@ class Lumo {
 
   void start() {
     final now = DateTime.now();
+    // Save what home shows: untouched switches are only defaults, and the extension reads the saved list.
+    _p.setStringList('watched', watched.toList());
     _p.setInt('startedAt', now.millisecondsSinceEpoch);
     _p.setInt('endsAt', now.add(Duration(minutes: minutes)).millisecondsSinceEpoch);
   }
@@ -125,7 +123,6 @@ class Lumo {
     final minutes = DateTime.now().difference(since).inSeconds / 60;
     final p = await _post('/patrol', {'videos': videos, 'channels': channels, 'minutes': minutes});
     if (p?['status'] == 'ok') return Report('${p!['report']}$guarded', Report.fromJson(p).items);
-    if (_unauthorized) return const Report('設定で「鍵」を入れてね。そしたらお話しできるよ', []);
     // Gemini trouble: Lumo still shows what it found, without its comments.
     return videos.isEmpty
         ? Report('YouTube は静かだったよ$guarded', const [])
@@ -188,19 +185,16 @@ class Lumo {
     }
   }
 
-  bool _unauthorized = false;
-
   Future<Map<String, dynamic>?> _post(String path, Map<String, Object> body) async {
     try {
       final res = await _http
           .post(
             // Same origin on Cloud Run (it serves this app and the API); the extension's copy names the API.
             apiBase.isEmpty ? Uri.base.resolve(path) : Uri.parse(apiBase).resolve(path),
-            headers: {'content-type': 'application/json', if (token.isNotEmpty) 'authorization': 'Bearer $token'},
+            headers: {'content-type': 'application/json'},
             body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 60));
-      _unauthorized = res.statusCode == 401;
       return res.statusCode == 200 ? jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic> : null;
     } catch (_) {
       return null; // offline or timed out: the caller falls back

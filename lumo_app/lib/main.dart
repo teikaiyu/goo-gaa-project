@@ -107,11 +107,6 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: CupertinoColors.systemGroupedBackground,
       navigationBar: CupertinoNavigationBar(
         middle: const Text('Lumo'),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => showCupertinoModalPopup(context: context, builder: (_) => SettingsSheet(lumo)),
-          child: const Icon(CupertinoIcons.gear, semanticLabel: '設定'),
-        ),
       ),
       child: SafeArea(
         child: ListView(
@@ -182,14 +177,17 @@ class _HomePageState extends State<HomePage> {
                     lumo.watched.isEmpty || lumo.minutes == 0
                         ? null
                         : () async {
-                            // Ask Google for YouTube access first (it needs this tap to open its window).
-                            if (lumo.watched.contains('youtube') && !lumo.youtubeReady && youtubeConfigured) {
-                              final access = await askYouTube();
-                              if (access != null) lumo.setYouTubeAccess(access.$1, access.$2);
-                            }
+                            // Open Google's YouTube window right in this tap (browsers allow it only here), but never
+                            // wait for it to start: the shield must be on even if the user is still in that window,
+                            // closes it, or Google refuses. YouTube access only matters for the report at the end.
+                            final asking = lumo.watched.contains('youtube') && !lumo.youtubeReady && youtubeConfigured
+                                ? askYouTube()
+                                : null;
                             lumo.start();
                             _toExtension('sync'); // shield from this moment, not from the extension's next check
-                            if (context.mounted) _go(context, PatrolPage(lumo));
+                            _go(context, PatrolPage(lumo));
+                            final access = await asking;
+                            if (access != null) lumo.setYouTubeAccess(access.$1, access.$2);
                           },
                   ),
                 ],
@@ -451,10 +449,32 @@ class _PatrolPageState extends State<PatrolPage> {
               const Spacer(),
               _primary('完了して Lumo を呼び戻す', _finish),
               _secondary('自分で見る', () async {
+                final watched = [for (final s in serviceNames.keys) if (widget.lumo.watched.contains(s)) s];
+                // More than one app: the user picks which one (an action sheet, HIG's way to choose an action).
+                final service = watched.length == 1
+                    ? watched.first
+                    : await showCupertinoModalPopup<String>(
+                        context: context,
+                        builder: (sheet) => CupertinoActionSheet(
+                          title: const Text('どれを見る？'),
+                          actions: [
+                            for (final s in watched)
+                              CupertinoActionSheetAction(
+                                onPressed: () => Navigator.pop(sheet, s),
+                                child: Text(serviceNames[s]!),
+                              ),
+                          ],
+                          cancelButton: CupertinoActionSheetAction(
+                            onPressed: () => Navigator.pop(sheet),
+                            child: const Text('キャンセル'),
+                          ),
+                        ),
+                      );
+                if (service == null) return; // cancelled: the patrol goes on
                 widget.lumo.stop();
                 _toExtension('sync'); // the patrol is over: the extension must not shield the page opened next
                 await Future<void>.delayed(const Duration(milliseconds: 500));
-                _openMyself(widget.lumo.watched.first);
+                _openMyself(service);
               }),
             ],
           ),
@@ -516,43 +536,4 @@ class ReportPage extends StatelessWidget {
       ),
     );
   }
-}
-
-// ---------- sheets ----------
-
-class SettingsSheet extends StatelessWidget {
-  const SettingsSheet(this.lumo, {super.key});
-  final Lumo lumo;
-
-  @override
-  Widget build(BuildContext context) => CupertinoPopupSurface(
-    child: SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('鍵（API トークン）', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            CupertinoTextField(
-              controller: TextEditingController(text: lumo.token),
-              obscureText: true,
-              autocorrect: false,
-              placeholder: 'チームから受け取った鍵',
-              onChanged: (v) => lumo.token = v,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'この端末の中だけに保存します。',
-              style: TextStyle(fontSize: 13, color: CupertinoColors.secondaryLabel.resolveFrom(context)),
-            ),
-            const SizedBox(height: 12),
-            CupertinoButton(onPressed: () => Navigator.pop(context), child: const Text('完了')),
-          ],
-        ),
-      ),
-    ),
-  );
 }

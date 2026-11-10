@@ -58,7 +58,9 @@ node --test lumo_extension/rules.test.mjs     # URL の判定（Node だけ）
 
 # 通しの確認（本物のアプリ + Playwright の Chromium に拡張機能を入れる）
 .venv/bin/pip install playwright && .venv/bin/playwright install chromium   # 初回だけ
-(cd lumo_app && flutter build web) && lumo_extension/build.sh
+# 本番と同じく GOOGLE_CLIENT_ID を付けてビルドする（付けないと「始める」で Google の画面が開く場合を通らない）
+export GOOGLE_CLIENT_ID=<Web 版と同じクライアント ID>
+(cd lumo_app && flutter build web --dart-define=GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID) && lumo_extension/build.sh
 .venv/bin/python lumo_extension/e2e.py        # localhost:8080 に何もなければ、avatar_api を起動して終わったら止める
 ```
 
@@ -74,5 +76,5 @@ node --test lumo_extension/rules.test.mjs     # URL の判定（Node だけ）
 - YouTube の許可を拡張機能の中で使うには、OAuth クライアント（Web 版と同じもの）の **承認済みのリダイレクト URI** に
   `https://pogcdfbiphaccabcjjadojoppmmgepgf.chromiumapp.org/` を足す必要がある（拡張機能の ID は `manifest.json` の `key` で固定）。
   ビルドのときに `GOOGLE_CLIENT_ID` を渡す（`scripts/deploy_avatar_api.sh` は渡す）
-- 報告の文章は Cloud Run の `/patrol` を呼ぶので、Web 版と同じく、設定に API の鍵を入れていないと Lumo の決まった言葉になる
+- 報告の文章は Cloud Run の `/patrol` を呼ぶ（鍵は要らない。1 日の回数に上限があり、超えると Lumo は動画をコメントなしで並べる）
 - Playwright では、ツールバーのボタンと初めて入れたときに Lumo が開くことは確かめられない（中の Lumo のページを直接開いて確かめた）

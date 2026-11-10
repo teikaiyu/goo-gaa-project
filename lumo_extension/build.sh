@@ -10,7 +10,8 @@ ext=$(cd "$(dirname "$0")" && pwd)
 repo=$(dirname "$ext")
 api=${API_BASE:-https://avatar-api-ek3vs4df7q-an.a.run.app/}
 
-rm -rf "$ext/app" "$ext/lumo"
+# Chrome refuses to load a folder holding names that start with "_" (Python leaves __pycache__ when e2e.py is imported).
+rm -rf "$ext/app" "$ext/lumo" "$ext/__pycache__"
 (cd "$repo/lumo_app" && flutter build web --release --csp --no-web-resources-cdn --base-href /app/ \
   --dart-define=API_BASE="$api" --dart-define=GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}" -o "$ext/app")
 cp -R "$repo/images" "$ext/lumo"
