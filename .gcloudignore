@@ -1,0 +1,8 @@
+# gcloud uploads the build context from this list (without it, gcloud falls back to .gitignore,
+# which hides lumo_app/build/ that the Dockerfile copies). .dockerignore then picks the files.
+.git/
+.venv/
+.pytest_cache/
+**/__pycache__/
+.env
+lumo_app/.dart_tool/

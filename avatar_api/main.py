@@ -4,16 +4,21 @@ Run locally:  uvicorn main:app --reload --port 8080
 """
 import base64
 import hmac
+import io
 import os
 import sys
+import time
+import zipfile
 from functools import lru_cache
+from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi.staticfiles import StaticFiles
 
 from gemini import AvatarGenerator
 from images import images_dir, load_image
 from mood import FALLBACK_LINES, Mood, decide_mood
-from schemas import (AvatarRequest, AvatarResponse, RecapRequest, RecapResponse, WatchItem,
+from schemas import (AvatarRequest, AvatarResponse, PatrolRequest, PatrolResponse, RecapRequest, RecapResponse, WatchItem,
                      WatchResponse)
 
 app = FastAPI(title="goo-gaa avatar API")
@@ -61,6 +66,31 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def extension_dir() -> Path:
+    # Read per call, like images_dir(): Cloud Run sets EXTENSION_DIR, locally it is the repo's lumo_extension/.
+    return Path(os.environ.get("EXTENSION_DIR") or Path(__file__).resolve().parent.parent / "lumo_extension")
+
+
+@app.get("/lumo_extension.zip")
+def extension_zip() -> Response:
+    """The Chrome extension as a folder for "Load unpacked" (it is not on the Chrome Web Store). Public: it is
+    the same code as in the repo. Zipped per request, so it always matches the deployed app."""
+    d = extension_dir()
+    if not d.is_dir():
+        raise HTTPException(404, "extension not bundled")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for p in sorted(d.rglob("*")):
+            rel = p.relative_to(d)
+            # What Chrome loads + the README; no tests or build script. app/ and lumo/ are the bundled app (build.sh).
+            if p.is_file() and (rel.parts[0] in ("app", "lumo") or (len(rel.parts) == 1 and p.suffix in (".js", ".json", ".md"))):
+                # Paths from the extension folder: macOS and Windows then both unzip into ONE folder named
+                # lumo_extension (a top folder inside the zip ends up nested on Windows, and that outer folder fails to load).
+                z.write(p, rel.as_posix())
+    return Response(buf.getvalue(), media_type="application/zip",
+                    headers={"content-disposition": 'attachment; filename="lumo_extension.zip"'})
+
+
 @app.post("/recap", response_model=RecapResponse, dependencies=[Depends(check_token)])
 def recap(req: RecapRequest, gen: AvatarGenerator = Depends(get_generator)) -> RecapResponse:
     """"How was it?" after a watch. Written only from the items the client sends back. Google trouble ->
@@ -84,6 +114,23 @@ def watch(gen: AvatarGenerator = Depends(get_generator)) -> WatchResponse:
     except Exception as e:
         _warn("watch", e)
         return WatchResponse(report="", items=[], source="fallback")
+
+
+@app.post("/patrol", response_model=PatrolResponse, dependencies=[Depends(check_token)])
+def patrol(req: PatrolRequest, gen: AvatarGenerator = Depends(get_generator)) -> PatrolResponse:
+    """Lumo's patrol report from the user's YouTube subscriptions (videos fetched by the app with the user's
+    own permission). Google trouble -> status="failed" (the app then lists the videos itself). Video text
+    and channel names are never logged."""
+    t0 = time.monotonic()
+    try:
+        r = gen.youtube_report([v.model_dump() for v in req.videos], req.channels, req.minutes)
+    except Exception as e:
+        _warn("patrol", e)
+        return PatrolResponse(report="", items=[], status="failed")
+    finally:
+        print(f"[patrol] {len(req.videos)} videos in {time.monotonic() - t0:.1f}s", file=sys.stderr)
+    items = [WatchItem(title=i.title[:30], gist=i.gist[:60]) for i in r.items[:5]]
+    return PatrolResponse(report=r.report, items=items, status="ok")
 
 
 @app.post("/avatar", response_model=AvatarResponse, dependencies=[Depends(check_token)])
@@ -119,3 +166,10 @@ def avatar(req: AvatarRequest, gen: AvatarGenerator = Depends(get_generator)) ->
         image_source=image_source,
         source=source,
     )
+
+
+# Same origin as the API, so the app needs no CORS. Mounted LAST: the API routes above win.
+if images_dir().is_dir():
+    app.mount("/lumo", StaticFiles(directory=images_dir()), name="lumo")
+if os.path.isdir(os.environ.get("WEB_DIR", "")):
+    app.mount("/", StaticFiles(directory=os.environ["WEB_DIR"], html=True), name="web")

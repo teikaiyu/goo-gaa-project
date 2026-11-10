@@ -1,0 +1,72 @@
+# CI/CD: every pull request is tested; every push to main is tested, then deployed to Cloud Run.
+# So the URL always serves the newest main that passed the tests. How it works: docs/cicd.md
+#
+# No keys are stored in GitHub: it logs in to Google Cloud with Workload Identity Federation
+# (a short-lived token GitHub gets for THIS repo only). One-time setup: scripts/setup_cicd.sh.
+# Repository variables it needs (Settings > Secrets and variables > Actions > Variables):
+#   GCP_PROJECT, WIF_PROVIDER, DEPLOY_SA   (printed by scripts/setup_cicd.sh)
+#   GOOGLE_CLIENT_ID                       (OAuth client ID, see docs/cicd.md)
+name: test-and-deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch: # "Run workflow" button: redeploy main by hand
+
+env:
+  FLUTTER_VERSION: "3.47.9" # same as local, so the build is the same everywhere
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12" # same as the Dockerfile
+      - name: API tests
+        run: |
+          pip install -q -r avatar_api/requirements-dev.txt
+          cd avatar_api && python -m pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Extension tests
+        run: node --test lumo_extension/rules.test.mjs
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - name: App tests
+        working-directory: lumo_app
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+  deploy:
+    needs: test # a red build never reaches the URL
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency: deploy-main # one deploy at a time; a newer push waits for the running one
+    permissions:
+      contents: read
+      id-token: write # lets GitHub hand Google a short-lived identity token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - name: Deploy (same script as by hand)
+        env:
+          GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }} # public OAuth client ID for "allow Lumo to read YouTube"
+          SKIP_TESTS: "1" # the test job already ran them
+        run: scripts/deploy_avatar_api.sh
