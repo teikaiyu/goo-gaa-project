@@ -511,7 +511,7 @@ class ReportPage extends StatelessWidget {
                   const CupertinoActivityIndicator(radius: 14),
                 ] else ...[
                   LumoSays(
-                    r.items.isEmpty ? 'Lumo_disappointed.png' : 'Lumo_cheering.png',
+                    r.items.isEmpty ? 'Lumo_happy.png' : 'Lumo_cheering.png',
                     'えらい！${minutesLabel(focused)}がんばったね\n${r.text}',
                     label: 'ほめる Lumo',
                   ),
