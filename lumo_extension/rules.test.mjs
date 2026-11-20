@@ -24,3 +24,20 @@ test('a patrol is active only before it ends and with something watched', () => 
   assert.equal(isActive({ endsAt: 2000, watched: [] }, 1000), false);
   assert.equal(isActive(undefined, 1000), false);
 });
+
+test('apps the user added (site:<host>) are recognised like the built-in ones', () => {
+  const watched = ['site:mail.google.com', 'site:discord.com'];
+  assert.equal(serviceFor('https://mail.google.com/mail/u/0/', watched), 'site:mail.google.com');
+  assert.equal(serviceFor('https://discord.com/channels/@me', watched), 'site:discord.com');
+  assert.equal(serviceFor('https://canary.discord.com/app', watched), 'site:discord.com'); // subdomain
+  assert.equal(serviceFor('https://www.google.com/', watched), null); // only the chosen host, not its parent
+  assert.equal(serviceFor('https://discord.com.evil.io/', watched), null);
+  assert.equal(serviceFor('https://mail.google.com/', ['instagram']), null); // not switched on
+});
+
+test('a malformed custom key never matches (it must not shield a whole domain ending by accident)', () => {
+  for (const key of ['site:', 'site:com', 'site:localhost', 'site:.com', 'site:a b.com', 'discord.com']) {
+    assert.equal(serviceFor('https://discord.com/', [key]), null, key);
+    assert.equal(serviceFor('https://example.com/', [key]), null, key);
+  }
+});

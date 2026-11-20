@@ -286,6 +286,12 @@ SNS のドゥームスクロールで時間を受動的に消費してしまう�
     （`.venv/bin/python lumo_extension/e2e.py https://…run.app`。Google の許可画面は偽物に差し替えるので、報告は「YouTube とつながってなかった」になる。鍵は要らない）。
     入れた直後の自動読み込み直しそのものは Playwright では確かめられない（確かめたのは Lumo のタブを見つけられるところまで）。
 
+### [SPIKE-35] 🔴 足したアプリ（Gmail / Discord）の遮りを、本物の Chrome で確かめていない
+- 単体テスト（URL の判定、入力の正規化、保存と削除）は通っているが、`e2e.py` は youtube.com だけを開く。足したアプリで
+  「ホームで足す → 始める → 開くと Lumo の画面 → やっぱやめとく」を通しで確かめる必要がある。
+- Gmail は `mail.google.com` を指す（`gmail.com` は転送のみ）。Discord は Web 版（`discord.com`）だけが対象で、デスクトップアプリは遮れない（SPIKE-32 と同じ限界）。
+- `co.jp` のような末尾だけの入力は通る（自分で入れた場合のみ）。公開サフィックス表を入れるかは未決。
+
 ### [SPIKE-33] ✅ `/patrol`（Lumo がログインして SNS を見に行く）は SNS の規約に触れる → 廃止して YouTube 公式 API に置き換え
 - **内容**: Instagram の規約は、許可なく自動の手段で情報を集めることを禁じている。Meta は 2024-10 から自動収集についての別の規約
   （Automated Data Collection Terms）も出しており、明示的な書面の許可が要るとしている。Muse が許されるのは Meta 自身の機能だから。
@@ -388,6 +394,10 @@ SNS のドゥームスクロールで時間を受動的に消費してしまう�
   - AC: 実ウィンドウで 8 回の見張りに両方が出る（1 回の間は同じ絵）。感想では happy に戻る。片方のファイルが無くても残りが出る。テスト 6 件。**指定の `Lumo_lounging_with_phone.png` は改名後の `Lumo_phone_thick_tail.png` と同じ絵。2 枚目は `Lumo_happy_phone.png` と解釈した（要確認）**
 - [ ] **TASK-18g** 見直しの間隔（既定 180 秒）の妥当性確認: 429 / 費用 / 「見ている感」のバランス（[SPIKE-19]）
 - [ ] **TASK-18f** デプロイスクリプトの CI 化（GitHub Actions + Workload Identity Federation）
+
+- [x] **TASK-40** 見張るアプリを自分で足せる（Gmail / Discord など。ARCHITECT.md 4.16）
+  - AC: ホームでアドレスを足して、スイッチで切り替え・削除ができる。パトロール中にそのサイトを開くと Lumo の画面になる。
+    `parseSite` / `rules.js` の単体テスト（Dart 11 → 16 件、Node 3 → 5 件）が通る。**本物の Chrome で Gmail / Discord を開く確認は未実施**（下の SPIKE-35）
 
 ### Phase 3: 提出準備（11/10 17:00 JST まで）
 

@@ -14,7 +14,7 @@ async function shield(tabId, url) {
   if (!service) return;
   blocked[tabId] = url; // where to go if the user taps "開く"
   await set({ blocked });
-  await chrome.tabs.update(tabId, { url: `${lumo.app}?shield=${service}` });
+  await chrome.tabs.update(tabId, { url: `${lumo.app}?shield=${encodeURIComponent(service)}` });
 }
 
 // A new page load, and in-app navigation of sites like Instagram (they change the URL without reloading).

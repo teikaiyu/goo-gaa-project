@@ -22,7 +22,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final lumo = await Lumo.load();
   final shield = Uri.base.queryParameters['shield']; // set by the extension when a watched SNS is opened
-  final Widget first = serviceNames.containsKey(shield)
+  final Widget first = isKnownService(shield)
       ? ShieldPage(lumo, shield!)
       : lumo.endsAt != null
       ? PatrolPage(lumo)
@@ -85,7 +85,7 @@ void _go(BuildContext context, Widget page) =>
     Navigator.of(context).pushAndRemoveUntil(CupertinoPageRoute(builder: (_) => page), (_) => false);
 
 /// Leave the choice with the user, without guilt (HIG Agency).
-void _openMyself(String service) => launchUrl(Uri.parse(serviceWebUrls[service]!), webOnlyWindowName: '_self');
+void _openMyself(String service) => launchUrl(Uri.parse(serviceWebUrl(service)), webOnlyWindowName: '_self');
 
 // ---------- 1. Home ----------
 
@@ -99,15 +99,24 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late final _task = TextEditingController(text: widget.lumo.task);
+  final _site = TextEditingController();
+  bool _siteError = false;
+
+  /// Adds the app typed in the box (and switches it on); says so when it is not a web address.
+  void _addSite() {
+    if (_site.text.trim().isEmpty) return;
+    setState(() {
+      _siteError = widget.lumo.addSite(_site.text) == null;
+      if (!_siteError) _site.clear();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final lumo = widget.lumo;
     return CupertinoPageScaffold(
       backgroundColor: CupertinoColors.systemGroupedBackground,
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('Lumo'),
-      ),
+      navigationBar: CupertinoNavigationBar(middle: const Text('Lumo')),
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 16),
@@ -128,7 +137,8 @@ class _HomePageState extends State<HomePage> {
               header: const Text('集中をじゃまするアプリ'),
               footer: const Text(
                 '集中しているあいだは、ここで選んだアプリを Lumo が見張ります。'
-                'YouTube は Lumo がきみの登録チャンネルを見てきて、終わったらお話ししてくれます',
+                'YouTube は Lumo がきみの登録チャンネルを見てきて、終わったらお話ししてくれます。'
+                '自分で足したアプリは、開いたときに止めるだけです',
               ),
               children: [
                 for (final s in serviceNames.entries)
@@ -141,6 +151,47 @@ class _HomePageState extends State<HomePage> {
                         on ? w.add(s.key) : w.remove(s.key);
                         lumo.watched = w;
                       }),
+                    ),
+                  ),
+                // Apps the user added by hand (Gmail, Discord, ...): same switch, plus a way to remove them.
+                for (final host in lumo.customSites)
+                  CupertinoListTile(
+                    leading: CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(44, 44),
+                      onPressed: () => setState(() => lumo.removeSite(host)),
+                      child: Icon(
+                        CupertinoIcons.minus_circle_fill,
+                        color: CupertinoColors.systemRed.resolveFrom(context),
+                      ),
+                    ),
+                    title: Text(serviceName('$customPrefix$host')),
+                    trailing: CupertinoSwitch(
+                      value: lumo.watched.contains('$customPrefix$host'),
+                      onChanged: (on) => setState(() {
+                        final w = lumo.watched;
+                        on ? w.add('$customPrefix$host') : w.remove('$customPrefix$host');
+                        lumo.watched = w;
+                      }),
+                    ),
+                  ),
+                CupertinoTextField.borderless(
+                  controller: _site,
+                  placeholder: 'アプリを足す（例：gmail.com、discord.com）',
+                  padding: const EdgeInsets.all(14),
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  onChanged: (_) {
+                    if (_siteError) setState(() => _siteError = false);
+                  },
+                  onSubmitted: (_) => _addSite(),
+                  suffix: CupertinoButton(onPressed: _addSite, child: const Text('追加')),
+                ),
+                if (_siteError)
+                  CupertinoListTile(
+                    title: Text(
+                      'ウェブのアドレスで入れてね（例：discord.com）',
+                      style: TextStyle(color: CupertinoColors.systemRed.resolveFrom(context), fontSize: 14),
                     ),
                   ),
                 _shieldStatus(context),
@@ -320,7 +371,7 @@ class ShieldPage extends StatelessWidget {
             // shortcut: placeholder picture until the new art arrives (same file name -> just replace it).
             LumoSays(
               'Lumo_happy_phone.png',
-              '今ボクが見てるよ〜\n${serviceNames[service]} はまかせてね',
+              '今ボクが見てるよ〜\n${serviceName(service)} はまかせてね',
               size: 260,
               label: '楽しそうにスマホを見る Lumo',
             ),
@@ -392,7 +443,7 @@ class _PatrolPageState extends State<PatrolPage> {
   Widget build(BuildContext context) {
     final left = _left;
     final mmss = '${left.inMinutes}:${(left.inSeconds % 60).toString().padLeft(2, '0')}';
-    final names = widget.lumo.watched.map((s) => serviceNames[s]).join('・');
+    final names = widget.lumo.watched.map(serviceName).join('・');
     return CupertinoPageScaffold(
       child: SafeArea(
         child: Padding(
@@ -449,7 +500,7 @@ class _PatrolPageState extends State<PatrolPage> {
               const Spacer(),
               _primary('完了して Lumo を呼び戻す', _finish),
               _secondary('自分で見る', () async {
-                final watched = [for (final s in serviceNames.keys) if (widget.lumo.watched.contains(s)) s];
+                final watched = widget.lumo.watched.toList();
                 // More than one app: the user picks which one (an action sheet, HIG's way to choose an action).
                 final service = watched.length == 1
                     ? watched.first
@@ -461,7 +512,7 @@ class _PatrolPageState extends State<PatrolPage> {
                             for (final s in watched)
                               CupertinoActionSheetAction(
                                 onPressed: () => Navigator.pop(sheet, s),
-                                child: Text(serviceNames[s]!),
+                                child: Text(serviceName(s)),
                               ),
                           ],
                           cancelButton: CupertinoActionSheetAction(
