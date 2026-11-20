@@ -15,6 +15,61 @@ const serviceWebUrls = {
   'youtube': 'https://www.youtube.com/',
 };
 
+/// Apps the user adds by hand (Gmail, Discord, ...) are watched by their web address. They live in the same
+/// `watched` list as the built-in ones, under the key `site:<host>`; lumo_extension/rules.js reads the host
+/// straight from that key, so no second channel to the extension is needed.
+const customPrefix = 'site:';
+
+/// Friendly names for common sites; any other site shows its address.
+const _siteNames = {
+  'mail.google.com': 'Gmail',
+  'discord.com': 'Discord',
+  'web.whatsapp.com': 'WhatsApp',
+  'slack.com': 'Slack',
+  'facebook.com': 'Facebook',
+  'tiktok.com': 'TikTok',
+  'reddit.com': 'Reddit',
+  'line.me': 'LINE',
+};
+
+/// Names people type that are not the address the app really lives at (gmail.com only redirects).
+const _siteAliases = {'gmail.com': 'mail.google.com', 'discordapp.com': 'discord.com'};
+
+/// What the user typed ("https://www.discord.com/app", "Discord.com", "gmail.com") -> the host to watch
+/// ("discord.com", "mail.google.com"), or null if it is not a web address.
+String? parseSite(String input) {
+  var text = input.trim().toLowerCase();
+  if (text.isEmpty || text.contains(RegExp(r'\s'))) return null;
+  if (!text.contains('://')) text = 'https://$text';
+  var host = Uri.tryParse(text)?.host ?? '';
+  if (host.startsWith('www.')) host = host.substring(4);
+  host = _siteAliases[host] ?? host;
+  // letters, digits, hyphens, and at least one dot with a real ending ("localhost", "a.b", "1.2.3.4" are not apps)
+  return RegExp(r'^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$').hasMatch(host) ? host : null;
+}
+
+/// Is this key one the app understands: a built-in app or a valid `site:<host>`?
+bool isKnownService(String? key) =>
+    key != null &&
+    (serviceNames.containsKey(key) ||
+        (key.startsWith(customPrefix) &&
+            parseSite(key.substring(customPrefix.length)) == key.substring(customPrefix.length)));
+
+/// The name to show for a key: "Instagram", "Gmail", or the address itself.
+String serviceName(String key) {
+  if (serviceNames.containsKey(key)) return serviceNames[key]!;
+  final host = key.startsWith(customPrefix) ? key.substring(customPrefix.length) : key;
+  return _siteNames[host] ?? host;
+}
+
+/// "Open it myself" goes to the web version.
+String serviceWebUrl(String key) =>
+    serviceWebUrls[key] ??
+    'https://${_siteHome[key.substring(customPrefix.length)] ?? key.substring(customPrefix.length)}/';
+
+/// A few sites whose front door is not the bare host.
+const _siteHome = {'discord.com': 'discord.com/app', 'slack.com': 'app.slack.com'};
+
 /// Can watched SNS be shielded in this browser? Only the Lumo Chrome extension can do it, so: it is running
 /// (`ready`), it could be installed here (`needsExtension`: Chrome or another Chromium browser on a computer),
 /// or this browser cannot shield at all (`unsupported`: iPhone, Android, Safari, Firefox).
@@ -60,9 +115,28 @@ class Lumo {
   static Future<Lumo> load([http.Client? client]) async =>
       Lumo._(await SharedPreferences.getInstance(), client ?? http.Client());
 
-  Set<String> get watched =>
-      (_p.getStringList('watched') ?? ['instagram', 'youtube']).where(serviceNames.containsKey).toSet();
+  Set<String> get watched => (_p.getStringList('watched') ?? ['instagram', 'youtube']).where(isKnownService).toSet();
   set watched(Set<String> v) => _p.setStringList('watched', v.toList());
+
+  /// The apps the user added by hand (hosts), kept even while their switch is off.
+  List<String> get customSites =>
+      (_p.getStringList('customSites') ?? const []).where((h) => parseSite(h) == h).toList();
+
+  /// Adds an app by its web address and switches it on. Returns its key, or null if it is not a web address.
+  String? addSite(String input) {
+    final host = parseSite(input);
+    if (host == null) return null;
+    final key = '$customPrefix$host';
+    if (!customSites.contains(host)) _p.setStringList('customSites', [...customSites, host]);
+    watched = {...watched, key};
+    return key;
+  }
+
+  /// Forgets an app the user added: gone from the list and no longer watched.
+  void removeSite(String host) {
+    _p.setStringList('customSites', [...customSites]..remove(host));
+    watched = {...watched}..remove('$customPrefix$host');
+  }
 
   String get task => _p.getString('task') ?? '';
   set task(String v) => _p.setString('task', v);
@@ -103,7 +177,7 @@ class Lumo {
   Future<Report> fetchReport() async {
     final others = [
       for (final s in watched)
-        if (s != 'youtube') serviceNames[s]!,
+        if (s != 'youtube') serviceName(s),
     ].join('・');
     final guarded = others.isEmpty ? '' : '\n$others はボクがしっかり見張ってたよ';
     if (!watched.contains('youtube')) return Report('$others はボクがしっかり見張ってたよ！', const []);

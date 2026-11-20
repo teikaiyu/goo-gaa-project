@@ -159,4 +159,58 @@ void main() {
     again.stop();
     expect((await Lumo.load()).endsAt, isNull);
   });
+
+  test('parseSite: addresses people type become the host to watch', () {
+    expect(parseSite('discord.com'), 'discord.com');
+    expect(parseSite('  https://www.Discord.com/app  '), 'discord.com');
+    expect(parseSite('gmail.com'), 'mail.google.com'); // gmail.com only redirects to mail.google.com
+    expect(parseSite('https://mail.google.com/mail/u/0/'), 'mail.google.com');
+    for (final bad in ['', '   ', 'discord', 'localhost', 'a b.com', '1.2.3.4', 'ほげ', 'http://']) {
+      expect(parseSite(bad), isNull, reason: bad);
+    }
+  });
+
+  test('apps the user added are saved, switched on, named, and can be removed', () async {
+    final lumo = await Lumo.load();
+    expect(lumo.addSite('gmail.com'), 'site:mail.google.com');
+    expect(lumo.addSite('https://discord.com/'), 'site:discord.com');
+    expect(lumo.addSite('nope'), isNull);
+    expect(lumo.addSite('discord.com'), 'site:discord.com'); // again: no duplicate
+    expect(lumo.customSites, ['mail.google.com', 'discord.com']);
+    expect(lumo.watched, containsAll(['instagram', 'youtube', 'site:mail.google.com', 'site:discord.com']));
+    expect(serviceName('site:mail.google.com'), 'Gmail');
+    expect(serviceName('site:example.org'), 'example.org');
+
+    final again = await Lumo.load(); // survives a reload
+    expect(again.customSites, ['mail.google.com', 'discord.com']);
+    again.removeSite('discord.com');
+    expect(again.customSites, ['mail.google.com']);
+    expect(again.watched, isNot(contains('site:discord.com')));
+  });
+
+  test('an added app that is switched off stays in the list but is not watched', () async {
+    final lumo = await Lumo.load();
+    lumo.addSite('discord.com');
+    lumo.watched = {...lumo.watched}..remove('site:discord.com');
+    expect(lumo.customSites, ['discord.com']);
+    expect(lumo.watched, isNot(contains('site:discord.com')));
+  });
+
+  test('junk keys in saved settings are ignored', () async {
+    SharedPreferences.setMockInitialValues({
+      'watched': ['youtube', 'site:localhost', 'site:', 'whatever'],
+      'customSites': ['localhost', 'discord.com'],
+    });
+    final lumo = await Lumo.load();
+    expect(lumo.watched, {'youtube'});
+    expect(lumo.customSites, ['discord.com']);
+  });
+
+  test('the report says Lumo guarded an added app by its name', () async {
+    var calls = 0;
+    final lumo = await lumoWith(MockClient((_) async => (calls++, _json({})).$2), youtube: false);
+    lumo.addSite('discord.com');
+    expect((await lumo.fetchReport()).text, allOf(contains('Instagram'), contains('Discord')));
+    expect(calls, 0);
+  });
 }

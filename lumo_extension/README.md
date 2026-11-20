@@ -5,7 +5,7 @@ Lumo のアプリ（ホーム・タイマー・遮る画面・報告）は拡張
 報告の文章（Gemini）だけは、デプロイ済みの Cloud Run を呼びます。
 
 パトロール中（Lumo のタイマーが動いている間）に、Lumo が代わりに見ている SNS の Web 版
-（instagram.com / x.com / youtube.com）を開くと、そのタブを Lumo の画面に切り替えます。
+（instagram.com / x.com / youtube.com と、ホームの「アプリを足す」で足したサイト。Gmail や Discord など）を開くと、そのタブを Lumo の画面に切り替えます。
 
 - **やっぱやめとく**：そのタブを閉じる
 - **開く**：そのタブだけ、このパトロールの間は開けるようにする
@@ -46,7 +46,7 @@ Chrome ウェブストアには公開していません。Lumo のアプリが z
 | `bridge.js` | Lumo のアプリのページ（中の `app/` と Web 版）で動く。ページに目印（`data-lumo-extension`）を付けてアプリに存在を知らせ、アプリが保存しているパトロールの状態（終わる時刻、見ている SNS）を拡張機能に伝え、Lumo の画面のボタン操作を受け渡す |
 | `background.js` | ツールバーのボタンと初めて入れたときに、中の Lumo（`app/index.html`）を開く。パトロール中に SNS のタブが開かれたら、パトロールを始めた Lumo の画面の `?shield=<SNS>` に切り替える。ボタンに応じてタブを閉じる / 元のページに戻す。入れたとき（更新したとき）に、開いていた Web 版 Lumo のタブを読み込み直す |
 | `build.sh` | Flutter のアプリ（`lumo_app`）を拡張機能のページ用にビルドして `app/` に、Lumo の画像を `lumo/` に入れる。拡張機能のページは外部のスクリプトを読めないので、CDN を使わない・Google のログイン用スクリプトの代わりに `chrome.identity` を使う・`bridge.js` を読み込む |
-| `rules.js` | どの URL がどの SNS か、パトロール中か、の判定 |
+| `rules.js` | どの URL がどの SNS（足したサイトは `site:<ホスト>` のキー）か、パトロール中か、の判定 |
 
 Lumo の画面そのものは Flutter アプリ（`lumo_app/lib/main.dart` の `ShieldPage`）、入れ方の画面は同じファイルの
 `ExtensionGuidePage`、zip は `avatar_api/main.py` の `/lumo_extension.zip`（このフォルダからテストを除いて毎回作る）。
